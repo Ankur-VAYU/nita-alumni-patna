@@ -1,4 +1,5 @@
-<!doctype html>
+// The join form page. {{…}} placeholders are filled from src/lib/reference.ts at runtime.
+export default `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -70,7 +71,7 @@
         <div class="avatar" id="photoPreview" aria-hidden="true"></div>
         <div class="field"><label for="photo">Profile photo <span class="opt">(recommended)</span></label><input id="photo" type="file" accept="image/jpeg,image/png,image/webp"><small class="hint">A clear face photo. It is resized before upload.</small><small class="err" data-for="photo"></small></div>
       </div>
-      <div class="field full"><label for="proof">Degree, provisional certificate or institute ID <span class="opt">(recommended)</span></label><input id="proof" type="file" accept="image/jpeg,image/png,application/pdf"><small class="hint">A photo of the certificate (JPG or PNG) or a PDF under 2 MB. Seen only by chapter admins, needed if your roll number does not match the batch list, and deleted once your registration is decided.</small><small class="err" data-for="proof"></small></div>
+      <div class="field full"><label for="proof">Degree, provisional certificate or institute ID <span class="opt">(recommended)</span></label><input id="proof" type="file" accept="image/jpeg,image/png,application/pdf"><small class="hint">A photo of the certificate (JPG or PNG, shrunk automatically) or a PDF under 500 KB. Seen only by chapter admins, needed if your roll number does not match the batch list, and deleted once your registration is decided.</small><small class="err" data-for="proof"></small></div>
       <div class="field full"><label for="vouchedBy">A verified alumnus who knows you <span class="opt">(optional)</span></label><input id="vouchedBy" name="vouchedBy" maxlength="160" placeholder="Name and batch, e.g. Priya Sinha, 2015"><small class="err" data-for="vouchedBy"></small></div>
     </fieldset>
 
@@ -99,3 +100,4 @@
 <footer><p>NIT Agartala Alumni · Patna Chapter</p></footer>
 </body>
 </html>
+`;

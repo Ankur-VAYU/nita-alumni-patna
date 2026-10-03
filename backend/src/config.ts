@@ -9,7 +9,6 @@ const envSchema = z.object({
   // Shared key for the admin API until admin sign-in is built. Keep it secret.
   ADMIN_API_KEY: z.string().min(32, 'ADMIN_API_KEY must be at least 32 characters'),
   // Set to true when running behind a reverse proxy or load balancer (most hosts).
-  TRUST_PROXY: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
 });
 
 export type Config = z.infer<typeof envSchema>;

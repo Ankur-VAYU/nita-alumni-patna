@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
-import { buildApp } from '../src/app.js';
 import { createDb } from '../src/db/index.js';
 import { runMigrations } from '../src/db/migrate.js';
+import { createHttpApp } from '../src/http/app.js';
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/nita_test';
 export const ADMIN_KEY = 'test-admin-key-test-admin-key-1234567890';
@@ -10,14 +10,37 @@ export const admin = { 'x-admin-key': ADMIN_KEY, 'x-admin-name': 'Amit Ranjan' }
 export async function setup() {
   const { db, pool } = createDb(TEST_DATABASE_URL);
   await runMigrations(pool);
-  const app = await buildApp(db, { adminKey: ADMIN_KEY, rateLimit: false });
-  await app.ready();
+  const app = createHttpApp({ adminKey: ADMIN_KEY, rateLimit: false, openDb: async () => ({ db, release: async () => {} }) });
   const reset = () => db.execute(sql`TRUNCATE members, batch_records, audit_log RESTART IDENTITY`);
-  const close = async () => {
-    await app.close();
-    await pool.end();
+  const close = () => pool.end();
+  return { app, db, pool, reset, close, inject: (o: InjectOptions | string) => inject(app, o) };
+}
+
+export interface InjectOptions {
+  method?: string;
+  url: string;
+  headers?: Record<string, string>;
+  payload?: string | object;
+}
+
+/** Sends a request to the app in memory and returns status, headers and body. */
+export async function inject(app: ReturnType<typeof createHttpApp>, o: InjectOptions | string) {
+  const opts = typeof o === 'string' ? { url: o } : o;
+  const headers = new Headers(opts.headers);
+  let body: string | undefined;
+  if (typeof opts.payload === 'string') body = opts.payload;
+  else if (opts.payload !== undefined) {
+    body = JSON.stringify(opts.payload);
+    if (!headers.has('content-type')) headers.set('content-type', 'application/json');
+  }
+  const res = await app.request(`http://localhost${opts.url}`, { method: opts.method ?? 'GET', headers, body });
+  const text = await res.text();
+  return {
+    statusCode: res.status,
+    headers: Object.fromEntries(res.headers.entries()),
+    body: text,
+    json: () => JSON.parse(text),
   };
-  return { app, db, pool, reset, close };
 }
 
 // Smallest files whose first bytes identify them as JPEG and PDF.

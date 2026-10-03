@@ -1,6 +1,6 @@
 # Backend
 
-Node.js 20+ · TypeScript · Fastify · PostgreSQL · Drizzle ORM · Zod
+Node.js 20+ · TypeScript · Hono (runs on Cloudflare Workers and Node.js) · PostgreSQL · Drizzle ORM · Zod
 
 What it does today:
 
@@ -17,7 +17,8 @@ Deployment and account creation: see [`../DEPLOY.md`](../DEPLOY.md).
 cp .env.example .env              # set ADMIN_API_KEY to any 32+ character string
 npm install
 docker compose -f docker-compose.dev.yml up -d   # or point DATABASE_URL at your own PostgreSQL
-npm run dev                       # http://localhost:3000/join
+npm run dev                       # http://localhost:3000/join (Node)
+npm run dev:worker                # http://localhost:8787/join (Cloudflare runtime, needs .dev.vars)
 npm run cli -- --help
 ```
 
@@ -37,8 +38,9 @@ npm run typecheck
 | `migrations/` | SQL that creates the tables; applied automatically on start and by `npm run db:migrate` |
 | `src/lib/reference.ts` | Degrees, branches, Bihar districts, states: **check the branch list before launch** |
 | `src/members/` | Validation (`schemas.ts`), CSV column mapping (`csv.ts`), all member logic (`service.ts`) |
-| `src/routes/` | Public form and API (`public.ts`), admin API (`admin.ts`) |
-| `public/` | The join form page, its styles and script, and the chapter seal |
+| `src/http/` | Public form and admin API (`app.ts`), form page template (`join-template.ts`) |
+| `public/` | Static files: form styles and script, chapter seal, robots.txt |
 | `templates/` | CSV templates for member import and the batch list |
-| `api/index.js`, `src/vercel.ts`, `vercel.json` | Vercel deployment (serverless function, build step that creates tables) |
+| `src/worker.ts`, `wrangler.jsonc` | Cloudflare Workers entry and configuration |
+| `src/server.ts` | Node.js entry (local development, docker-compose) |
 | `scripts/` | `backup-remote.sh` for the hosted database; `backup.sh` / `restore.sh` for the docker-compose setup |

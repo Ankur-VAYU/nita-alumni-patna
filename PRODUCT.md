@@ -119,7 +119,7 @@ prototype v3 unless marked "Later".
 
 | Part | Choice | Why |
 | --- | --- | --- |
-| API | Node.js 20+, TypeScript, Fastify, Zod | Same as Aawaz CRM |
+| API | Node.js 20+, TypeScript, Hono, Zod | Hono runs on Cloudflare Workers as well as Node.js |
 | Database | PostgreSQL with Drizzle ORM | Relational data with clear rules |
 | Login | Phone + OTP, short-lived access token + refresh token | The Aawaz CRM backend already has OTP sign-in with rate limits and hashed codes that can be adapted |
 | Payments | An Indian payment gateway that supports UPI, cards and net banking, with webhook confirmation | Mark a payment paid only after the gateway's signed webhook confirms it, never from the browser alone. Which gateway to use is still open (see section 9) |
@@ -128,7 +128,7 @@ prototype v3 unless marked "Later".
 | Web app | React + TypeScript, built as a PWA | Works on any phone browser, installable |
 | Android/iOS | Wrap the same web app with Capacitor | One codebase; Play Store presence |
 | Messages | WhatsApp Business API provider for OTP and alerts, SMS fallback, email provider | Members already use WhatsApp |
-| Hosting | **Vercel** (free Hobby plan) for the app, **Neon** free PostgreSQL for the data, at `nitaalumini.vercel.app`. Weekly backups taken by an admin. See `DEPLOY.md` | Chosen by the chapter: no cost to start |
+| Hosting | **Cloudflare Workers** (free plan) for the app and **Supabase** (free plan) for the PostgreSQL database, connected through Cloudflare Hyperdrive. Weekly backups taken by an admin. See `DEPLOY.md` | Chosen by the chapter: no cost to start |
 
 ### 7.1 Data model (main tables)
 

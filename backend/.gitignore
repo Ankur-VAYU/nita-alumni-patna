@@ -3,3 +3,5 @@ dist
 .env
 coverage
 backups
+.dev.vars
+.wrangler

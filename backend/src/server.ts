@@ -1,7 +1,11 @@
+// Node.js entry: for running on your own server (docker-compose) or locally with `npm run dev`.
+import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
+import { Hono } from 'hono';
 import { loadConfig, type Config } from './config.js';
 import { createDb } from './db/index.js';
 import { runMigrations } from './db/migrate.js';
-import { buildApp } from './app.js';
+import { createHttpApp } from './http/app.js';
 
 let config: Config;
 try {
@@ -10,21 +14,18 @@ try {
   console.error((err as Error).message);
   process.exit(1);
 }
+
 const { db, pool } = createDb(config.DATABASE_URL);
 await runMigrations(pool, (m) => console.log(m));
 
-const app = await buildApp(db, {
-  adminKey: config.ADMIN_API_KEY,
-  trustProxy: config.TRUST_PROXY,
-  fastify: { logger: { level: config.NODE_ENV === 'production' ? 'info' : 'debug' } },
-});
+const app = new Hono();
+app.use('/*', serveStatic({ root: './public' }));
+app.route('/', createHttpApp({ adminKey: config.ADMIN_API_KEY, openDb: async () => ({ db, release: async () => {} }) }));
 
-const shutdown = async () => {
-  await app.close();
-  await pool.end();
-  process.exit(0);
-};
+const server = serve({ fetch: app.fetch, port: config.PORT, hostname: config.HOST }, (info) =>
+  console.log(`Server listening on http://${info.address}:${info.port}`),
+);
+
+const shutdown = () => server.close(() => pool.end().then(() => process.exit(0)));
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
-
-await app.listen({ port: config.PORT, host: config.HOST });

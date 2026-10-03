@@ -4,98 +4,134 @@ This covers the first live part of the app: the **join form** and the **admin to
 verify member accounts. The member app screens (directory, events, board) come in the next phase
 and will use the same deployment and database.
 
-Chosen setup: **Vercel (free Hobby plan) + a free Neon PostgreSQL database**, at
-`https://nitaalumini.vercel.app`.
+Chosen setup: **Cloudflare Workers** (free plan) runs the app, and **Supabase** (free plan) holds
+the database. Cloudflare **Hyperdrive** connects the two.
+
+```
+Member's phone ──► Cloudflare Worker "nitaalumini" ──► Hyperdrive ──► Supabase PostgreSQL
+                   (join form, admin API)                             (all data)
+Admin's computer ── command line (npm run cli) ─────────────────────► Supabase PostgreSQL
+```
 
 ## 1. Where is the data saved?
 
-All data is saved in **one PostgreSQL database hosted by Neon**, created from your Vercel project.
-Vercel runs the app's code but stores no data itself. The app finds the database through one
-setting, `DATABASE_URL`.
+All data is saved in **one PostgreSQL database in your Supabase project**. Cloudflare runs the
+code but stores no member data.
 
 | Data | Table | Notes |
 | --- | --- | --- |
 | Member profiles (all form fields) | `members` | One row per person; mobile number and roll number are unique |
-| Profile photos | `members.photo` | Resized in the browser to 512 px (about 50–100 KB) before upload |
-| Proof documents | `members.proof` | Up to 2 MB; **deleted automatically when an admin approves or rejects**. The file name stays as a record |
+| Profile photos | `members.photo` | Shrunk in the browser to 512 px (about 50–100 KB) |
+| Proof documents | `members.proof` | At most 500 KB (certificate photos are shrunk automatically). **Deleted when an admin approves or rejects**; the file name is kept |
 | Institute batch list | `batch_records` | Used only to check registrations |
 | Who did what, and when | `audit_log` | Every registration, creation, import, approval, rejection and role change |
 
-**Region:** when creating the database, pick the region closest to India that Neon offers, and set
-Vercel's function region to match (step 6 below). Data then stays close to members and the app
-is faster. India's Digital Personal Data Protection Act, 2023 applies to this data; have the privacy
+**Region:** when creating the Supabase project, choose the region closest to members (Mumbai, if
+offered). India's Digital Personal Data Protection Act, 2023 applies to this data. Have the privacy
 notice and any data-location question checked by someone qualified.
 
-## 2. Limits of the free plans (check before relying on them)
+**Supabase's automatic API is locked.** Supabase publishes tables through its own "Data API" to
+anyone holding the project's public key. The app's migration `0002_row_level_security.sql` turns
+on row-level security on every table, which blocks that API. The app itself connects as the
+database owner and is not affected. Don't turn row-level security off, and don't add policies,
+unless you mean to expose data.
+
+## 2. Free-plan limits (check before relying on them)
 
 These are from my knowledge of the plans and may have changed. Check the current terms on
-vercel.com and neon.tech.
+cloudflare.com and supabase.com.
 
-- **Vercel Hobby is meant for personal, non-commercial use.** Check that a chapter website fits
-  Vercel's terms. Collecting event payments later may need the paid Pro plan.
-- **Vercel accepts at most 4.5 MB per request.** The form is built for this: photos are shrunk,
-  certificate photos are shrunk to 1600 px, and PDFs must be under 2 MB.
-- **Neon's free database is small** (around half a gigabyte when I last knew). That is enough
-  for a few thousand members because photos are small and proofs are deleted after review. Watch
-  the storage figure in the Neon dashboard.
-- **Neon's free database sleeps when idle.** The first visit after a quiet period takes a few
-  seconds longer; later visits are fast.
-- **Neon's own backup history on the free plan is short.** Take your own backups (section 6).
+- **Cloudflare Workers Free:** about 100,000 requests a day, and a small amount of CPU time per
+  request (10 ms). I measured a registration with photo at about 3 ms of CPU, and one with a
+  500 KB proof at about 7 ms. That's why proofs are limited to 500 KB and certificate photos are
+  shrunk. If registrations with proofs start failing, the paid Workers plan removes this limit.
+- **Supabase Free:** a small database (around 500 MB), and **projects are paused after about a
+  week without activity**. A paused project stops the join form until someone restores it from the
+  Supabase dashboard. Watch for Supabase's emails, and keep at least one admin checking regularly.
+- **Backups:** don't count on downloadable backups from Supabase on the free plan. Take your own
+  (section 6).
 
-## 3. Deploy on Vercel, step by step
+## 3. Set up and deploy, step by step
 
-You need a Vercel account (free) linked to the GitHub account that holds this code.
+You need: a Supabase account, a Cloudflare account, and a computer with Node.js 20 or newer and
+Git. All commands run in the `backend` folder of this repository.
 
-1. **Import the project.** On vercel.com choose *Add New → Project* and import the repository.
-   - Project name: `nitaalumini`. The address becomes `https://nitaalumini.vercel.app`, if that
-     name is free. Project names are lower-case, and `.vercel.app` is added automatically.
-   - Root Directory: `backend` (or `nita-alumni-patna/backend` while the code is still in the
-     Aawaz CRM repository).
-   - Framework preset: *Other*. Build settings come from `backend/vercel.json`; leave them alone.
-   - Don't deploy yet. First add the database and settings below.
-2. **Create the database.** In the project, open *Storage → Create Database → Neon (Postgres)*,
-   choose the free plan and a region close to India, and connect it to the project. This normally
-   adds a `DATABASE_URL` environment variable to the project automatically. If it uses another
-   name, add `DATABASE_URL` yourself with Neon's **pooled** connection string. That's the one whose
-   host contains `-pooler`, ending in `?sslmode=require`.
-3. **Add the settings** under *Settings → Environment Variables*, for the **Production** environment:
-   | Name | Value |
-   | --- | --- |
-   | `ADMIN_API_KEY` | A long random secret. Generate one with `openssl rand -hex 32` or `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Share it only with admins |
-   | `NODE_ENV` | `production` |
-4. **Deploy.** The build compiles the app and creates the database tables. The build log should
-   show `Applied 0001_init.sql` on the first deploy and `Database is up to date.` after that.
-   Preview deployments skip this step, so they never change the live database.
-5. **Check it works:** open `https://nitaalumini.vercel.app/health` (should show `{"ok":true}`),
-   then `https://nitaalumini.vercel.app/join`.
-6. **Match the regions:** *Settings → Functions → Function Region*: choose the Vercel region
-   nearest your Neon database.
+```bash
+git clone https://github.com/Ankur-VAYU/nita-alumni-patna.git
+cd nita-alumni-patna/backend
+npm install
+```
 
-Every push to the main branch redeploys automatically.
+### Step 1: Create the database (Supabase)
+1. On supabase.com create a **new project**: name `nita-alumni-patna`, a strong database password
+   (save it in a password manager), region closest to India.
+2. When it is ready, click **Connect** and copy the **Session pooler** connection string. It works
+   over normal (IPv4) internet connections. It looks like
+   `postgresql://postgres.<project-ref>:[YOUR-PASSWORD]@aws-0-<region>.pooler.supabase.com:5432/postgres`.
+   Put your database password in place of `[YOUR-PASSWORD]`.
+
+### Step 2: Create the tables (from your computer)
+```bash
+cp .env.example .env
+# In .env set:
+#   DATABASE_URL=<the Session pooler string from step 1>
+#   ADMIN_API_KEY=<a long random secret: openssl rand -hex 32>
+npm run cli -- migrate
+```
+You should see `Applied 0001_init.sql`, `Applied 0002_row_level_security.sql`, `Database is up to date.`
+
+If you get a certificate error such as *self-signed certificate in certificate chain*, download
+Supabase's certificate (Project Settings → Database → SSL Configuration). Then add
+`?sslmode=verify-full&sslrootcert=/full/path/to/the-downloaded.crt` to the end of `DATABASE_URL`.
+I could not test against Supabase from where this was built, so tell me the exact error if this
+does not fix it.
+
+### Step 3: Connect Cloudflare to the database (Hyperdrive)
+```bash
+npx wrangler login                       # opens the browser to sign in to Cloudflare
+npx wrangler hyperdrive create nita-alumni-db --connection-string="<the Session pooler string>"
+```
+Copy the `id` it prints into `backend/wrangler.jsonc`, replacing `REPLACE_WITH_HYPERDRIVE_ID`, then
+commit and push that change. The id is not a secret. The database password is stored inside
+Hyperdrive, not in the code.
+
+### Step 4: Store the admin key in Cloudflare
+```bash
+npx wrangler secret put ADMIN_API_KEY      # paste the same value as in your .env
+```
+
+### Step 5: Deploy
+```bash
+npm run deploy
+```
+The first time, Cloudflare asks you to choose a **workers.dev subdomain** for your account (for
+example `nita-patna`). The app is then at `https://nitaalumini.<your-subdomain>.workers.dev`.
+Open `/health` (should show `{"ok":true}`), then `/join`.
+
+For a shorter address such as `join.yourchapter.org`, you need your own domain added to
+Cloudflare. Then add it under the Worker's *Settings → Domains & Routes*.
+
+**Automatic deploys (optional):** in the Cloudflare dashboard open the Worker and use
+*Settings → Build → Connect* to link the GitHub repository. Set the root directory to `backend`
+and the deploy command to `npx wrangler deploy`. Every push to `main` then redeploys.
+Database changes are still applied by running `npm run cli -- migrate` from your computer, before
+deploying code that needs them.
+
+### Step 6: Remove the Vercel project
+The repository no longer contains Vercel settings. Delete the `nitaalumini` project on Vercel, and
+any Neon database you created there, so it stops building on every push.
 
 ## 4. Creating accounts from the backend
 
-Vercel runs no long-lived server you can log into, so admin commands run **from an admin's own
-computer** and connect straight to the same Neon database.
+Admin commands run **from an admin's own computer** and connect straight to Supabase using
+`DATABASE_URL` in `backend/.env`. That file holds the key to all member data: keep it only on
+admins' own computers and never commit it.
 
-**One-time setup on the admin's computer** (needs Node.js 20 or newer):
-```bash
-git clone <this repository> && cd <repository>/backend
-npm install
-cp .env.example .env
-# In .env, set DATABASE_URL to the Neon connection string (Neon dashboard → Connect),
-# and ADMIN_API_KEY to the same value as on Vercel.
-npm run cli -- --help
-```
-The `.env` file holds the key to all member data. Keep it only on admins' own computers and never
-commit it.
-
-All methods below apply the same rules as the join form: a valid Indian mobile number, a home
-district in Bihar, a known degree and branch, no duplicate mobile or roll number. Every action is
+All methods apply the same rules as the join form: a valid Indian mobile number, a home district
+in Bihar, a known degree and branch, and no duplicate mobile or roll number. Every action is
 recorded in the activity log.
 
 ### a) One person at a time
-
 ```bash
 npm run cli -- member:create \
   --name "Full Name" --phone 9XXXXXXXXX --email name@example.com --roll 08UCE021 \
@@ -110,24 +146,17 @@ Accounts created this way are **verified** straight away. Add `--status pending`
 through review instead.
 
 ### b) Many people from a spreadsheet
-
-Use this for data collected in Excel, Google Sheets or a Google Form.
-
 1. Start from `backend/templates/members-import-template.csv`, or export Google Form responses as
    CSV. Column names like "Mobile number" or "Batch (passing year)" are understood, and extra
    columns such as "Timestamp" are ignored. Details: `backend/templates/README.md`.
-2. **Try it without saving:** `npm run cli -- members:import members.csv --dry-run`. It lists
-   every row that needs fixing and why, for example "Row 14: phone: Enter a valid 10-digit mobile
-   number".
-3. Fix those rows, then import for real:
-   `npm run cli -- members:import members.csv --by "Your Name"`.
-   Rows already registered (same mobile or roll number) are skipped, so the same file can be
-   imported again after corrections.
+2. **Try without saving:** `npm run cli -- members:import members.csv --dry-run`. It lists every
+   row that needs fixing and why.
+3. Import for real: `npm run cli -- members:import members.csv --by "Your Name"`. Rows already
+   registered are skipped, so a corrected file can be imported again.
 
 ### c) Through the admin API
-
-For a future admin screen, or tools like Postman or curl. Every request needs the header
-`x-admin-key: <ADMIN_API_KEY>`; optionally add `x-admin-name: Your Name` for the activity log.
+Every request needs the header `x-admin-key: <ADMIN_API_KEY>`; optionally add
+`x-admin-name: Your Name` for the activity log.
 
 | Action | Request |
 | --- | --- |
@@ -142,57 +171,62 @@ For a future admin screen, or tools like Postman or curl. Every request needs th
 | Download members | `GET /api/v1/admin/members.csv?status=verified` |
 | Activity log | `GET /api/v1/admin/audit` |
 
-Example:
-```bash
-curl -X POST "https://nitaalumini.vercel.app/api/v1/admin/members/import?dryRun=true" \
-  -H "x-admin-key: $ADMIN_API_KEY" -H "content-type: text/csv" --data-binary @members.csv
-```
-Upload limit through the API on Vercel: 4.5 MB per request. The command line has no such limit.
+Large spreadsheet imports are better done with the command line (4b), which has no time or CPU
+limit.
 
 ## 5. Collecting data and reviewing registrations
 
-Share `https://nitaalumini.vercel.app/join` on WhatsApp groups. Registrations arrive as
-**pending**. Until the admin screens are built, review them from the command line:
-
+Share `https://nitaalumini.<your-subdomain>.workers.dev/join` on WhatsApp groups. Registrations
+arrive as **pending**. Until the admin screens are built, review them from the command line:
 ```bash
 npm run cli -- batch:import batch-list.csv --by "Your Name"     # once, and whenever the list changes
 npm run cli -- members:list --status pending
 npm run cli -- member:approve 9XXXXXXXXX --by "Your Name"
 npm run cli -- member:reject 9XXXXXXXXX --reason "Roll number not found in batch records" --by "Your Name"
 ```
-To look at a proof document before deciding, open
-`/api/v1/admin/members/<id>/proof` with the admin key, for example with curl:
-`curl -H "x-admin-key: $ADMIN_API_KEY" -o proof.pdf https://nitaalumini.vercel.app/api/v1/admin/members/<id>/proof`
+To see a proof document before deciding:
+`curl -H "x-admin-key: $ADMIN_API_KEY" -o proof.pdf https://nitaalumini.<your-subdomain>.workers.dev/api/v1/admin/members/<id>/proof`
 
 ## 6. Backups
 
-Take a backup at least weekly from an admin's computer. It needs the PostgreSQL client tools
-(`pg_dump`), at the same or a newer major version than the Neon database:
-
+Weekly, from an admin's computer (needs PostgreSQL client tools with `pg_dump` at the same or a
+newer major version than Supabase's database):
 ```bash
 scripts/backup-remote.sh            # reads DATABASE_URL from .env, writes backups/…sql.gz
 ```
-Keep copies somewhere other than that computer, for example in a private cloud folder. Test a
-restore once, into a new empty Neon database, with
-`gunzip -c backups/<file>.sql.gz | psql "<new database URL>"`.
+Keep copies away from that computer, for example in a private cloud folder. Test a restore once into
+a new empty database: `gunzip -c backups/<file>.sql.gz | psql "<new database URL>"`.
 
 ## 7. Security checklist before going live
 
-- `ADMIN_API_KEY` is long and random, known only to admins, and changed (in Vercel and in admins' `.env`) when someone leaves the committee. Redeploy after changing it.
-- `.env` files are never committed to Git.
-- Backups are taken and stored off the admin's computer; a restore has been tested once.
+- `ADMIN_API_KEY` is long and random, known only to admins, and changed when someone leaves the committee (`npx wrangler secret put ADMIN_API_KEY` and each admin's `.env`).
+- `.env` and `.dev.vars` files are never committed (both are in `.gitignore`).
+- Row-level security is on for every table (Supabase dashboard → Table Editor shows "RLS enabled").
+- Backups are taken and stored away from the admin's computer; a restore has been tested once.
 - The privacy notice on the form has been reviewed.
+- Optional, with your own domain on Cloudflare: add a WAF rate-limiting rule for `/api/v1/join`. The app's own limit counts per Cloudflare instance, so it is weaker.
 
 ## 8. Known limits of this first version
 
 - Admins share one key instead of having their own sign-in. Personal admin sign-in with OTP comes with the member app.
-- No WhatsApp or email messages are sent yet; applicants are not told automatically when they are approved.
-- Rate limiting of the form is per server instance; on Vercel that is weaker than on a single server. The hidden "honeypot" field and validation still stop simple bots.
+- No WhatsApp or email messages yet; applicants are not told automatically when they are approved.
+- Proof documents are limited to 500 KB to stay within the free plan's CPU limit.
 
-## Appendix: hosting on your own server instead
+## Appendix A: trying it on your computer
+
+```bash
+docker compose -f docker-compose.dev.yml up -d   # local PostgreSQL
+# .env: DATABASE_URL=postgres://postgres:postgres@localhost:5432/nita_alumni
+npm run cli -- migrate
+npm run dev            # Node version at http://localhost:3000/join
+# or, the Cloudflare version (uses localConnectionString in wrangler.jsonc and ADMIN_API_KEY from .dev.vars):
+npm run dev:worker     # http://localhost:8787/join
+```
+
+## Appendix B: hosting on your own server instead
 
 `backend/docker-compose.yml`, `Caddyfile` and `scripts/backup.sh` run the same app with its own
-PostgreSQL and automatic HTTPS on one Linux server, for example if the chapter outgrows the free
-plans. In short: point a domain at the server, `cp .env.example .env` and set `ADMIN_API_KEY`,
-`POSTGRES_PASSWORD` and `DOMAIN`, then `docker compose up -d --build`. The command line then runs as
-`docker compose exec api node dist/cli.js <command>`, and `scripts/backup.sh` can run nightly from cron.
+PostgreSQL and automatic HTTPS on one Linux server. In short: point a domain at the server,
+`cp .env.example .env`, and set `ADMIN_API_KEY`, `POSTGRES_PASSWORD` and `DOMAIN`. Then run
+`docker compose up -d --build`. The command line then runs as
+`docker compose exec api node dist/cli.js <command>`.

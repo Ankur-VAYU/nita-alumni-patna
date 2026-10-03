@@ -84,7 +84,7 @@ const dataUrlFile = (allowed: FileType[], maxBytes: number, label: string) =>
     }
     const data = Buffer.from(m[2], 'base64');
     if (data.length > maxBytes) {
-      ctx.addIssue({ code: 'custom', message: `${label} must be under ${Math.round(maxBytes / 1024 / 1024)} MB` });
+      ctx.addIssue({ code: 'custom', message: `${label} must be under ${Math.round(maxBytes / 1024)} KB` });
       return z.NEVER;
     }
     if (!FILE_TYPES[type](data)) {
@@ -101,11 +101,12 @@ export const joinInput = memberFields.extend({
   workDistrict: z.string().trim().min(2, 'Enter the city or district where you work').max(80),
   workState: oneOf(WORK_STATES, 'Choose an Indian state or union territory, or "Outside India"'),
   consent: z.literal(true, { message: 'Please confirm the details and agree to how they are shared' }),
-  photo: optional(dataUrlFile(['image/jpeg', 'image/png', 'image/webp'], 1024 * 1024, 'Photo')),
+  // Sizes are kept small so one registration stays within the CPU limit of Cloudflare's free plan.
+  photo: optional(dataUrlFile(['image/jpeg', 'image/png', 'image/webp'], 300 * 1024, 'Photo')),
   proof: optional(
     z.object({
       name: z.string().trim().max(200),
-      data: dataUrlFile(['image/jpeg', 'image/png', 'application/pdf'], 2 * 1024 * 1024, 'Proof document'),
+      data: dataUrlFile(['image/jpeg', 'image/png', 'application/pdf'], 500 * 1024, 'Proof document'),
     }),
   ),
   // Honeypot: real people leave this hidden field empty.

@@ -3,7 +3,7 @@
   const form = document.getElementById("joinForm");
   const btn = document.getElementById("submitBtn");
   const formError = document.getElementById("formError");
-  const MAX_PROOF = 2 * 1024 * 1024;
+  const MAX_PROOF = 500 * 1024;
   let photoData = null;
 
   const readAsDataUrl = (file) => new Promise((resolve, reject) => {
@@ -27,14 +27,19 @@
     return c.toDataURL("image/jpeg", 0.85);
   }
 
-  // Photos of certificates from phone cameras are often 4-8 MB. Shrink them to at most 1600px,
-  // which keeps the text readable and the upload well under the limit.
+  // Photos of certificates from phone cameras are often 4-8 MB. Shrink them until they fit the
+  // 500 KB limit, starting at 1200px, which keeps printed text readable.
   async function shrinkProofImage(file) {
     const img = await loadImage(file);
-    const k = Math.min(1, 1600 / Math.max(img.width, img.height));
-    const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-    return c.toDataURL("image/jpeg", 0.82);
+    let out = "";
+    for (const [side, quality] of [[1200, 0.75], [1000, 0.65], [800, 0.6]]) {
+      const k = Math.min(1, side / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      out = c.toDataURL("image/jpeg", quality);
+      if (out.length * 0.75 <= MAX_PROOF) break;
+    }
+    return out;
   }
 
   function setError(name, msg) {
@@ -82,7 +87,7 @@
       try {
         const isImage = proofFile.type === "image/jpeg" || proofFile.type === "image/png";
         const proofData = isImage ? await shrinkProofImage(proofFile) : await readAsDataUrl(proofFile);
-        if (proofData.length * 0.75 > MAX_PROOF) { setError("proof", "Choose a PDF under 2 MB, or upload a photo of the certificate instead"); return showFormError("The proof document is too large."); }
+        if (proofData.length * 0.75 > MAX_PROOF) { setError("proof", "This PDF is over 500 KB. Upload a photo of the certificate instead; it is shrunk automatically"); return showFormError("The proof document is too large."); }
         data.proof = { name: proofFile.name, data: proofData };
       } catch (err) { setError("proof", err.message); return; }
     }

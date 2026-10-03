@@ -1,0 +1,21 @@
+// Cloudflare Workers configuration. See ../DEPLOY.md.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nitaalumini",
+  "main": "src/worker.ts",
+  "compatibility_date": "2025-09-01",
+  // node:crypto, Buffer and the PostgreSQL driver need Node.js compatibility.
+  "compatibility_flags": ["nodejs_compat"],
+  // join.css, join.js, emblem.svg, robots.txt. Requests for other paths go to the Worker.
+  "assets": { "directory": "./public" },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      // Replace with the id printed by `npx wrangler hyperdrive create` (DEPLOY.md, step 3).
+      "id": "REPLACE_WITH_HYPERDRIVE_ID",
+      // Used only by `npm run dev:worker` on your own computer.
+      "localConnectionString": "postgres://postgres:postgres@localhost:5432/nita_alumni"
+    }
+  ],
+  "observability": { "enabled": true }
+}
