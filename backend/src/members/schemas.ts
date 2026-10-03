@@ -166,6 +166,7 @@ export const directoryQuery = z.object({
   batch: optional(z.coerce.number().int()),
   homeDistrict: optional(z.string().max(40)),
   workState: optional(z.string().max(60)),
+  workDistrict: optional(z.string().max(80)),
   mentor: optional(z.enum(['true', 'false'])).transform((v) => v === 'true'),
   offset: optional(z.coerce.number().int().min(0)).transform((v) => v ?? 0),
 });

@@ -339,7 +339,7 @@ export async function dismissReports(db: Db, postId: string, actorLabel: string)
 }
 
 /** For the home page: the next upcoming event and the newest open posts. */
-export async function homeHighlights(db: Db) {
+export async function homeHighlights(db: Db, viewerId: string) {
   const [next] = await db
     .select(EVENT_COLUMNS)
     .from(events)
@@ -354,5 +354,25 @@ export async function homeHighlights(db: Db) {
     .orderBy(desc(posts.createdAt))
     .limit(4);
   const people = next ? (await headcounts(db, [next.id])).get(next.id)?.people ?? 0 : 0;
-  return { nextEvent: next ? { ...next, people } : null, latestPosts: latest };
+  const [mine] = next ? await db.select().from(eventRsvps).where(and(eq(eventRsvps.eventId, next.id), eq(eventRsvps.memberId, viewerId))) : [];
+  const [{ openJobs }] = await db
+    .select({ openJobs: sql<number>`count(*)::int` })
+    .from(posts)
+    .where(and(eq(posts.status, 'open'), gt(posts.expiresAt, sql`now()`), inArray(posts.type, ['job', 'referral'])));
+  return {
+    nextEvent: next ? { ...next, people, mine: mine ? { guests: mine.guests, duePaise: amountDuePaise(next, mine.guests), paidPaise: mine.paidPaise } : null } : null,
+    latestPosts: latest,
+    openJobs,
+  };
+}
+
+/** For the Admin link in the sidebar: registrations waiting plus posts with open reports. */
+export async function staffBadge(db: Db) {
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(members).where(eq(members.status, 'pending'));
+  const [{ r }] = await db
+    .select({ r: sql<number>`count(DISTINCT ${postReports.postId})::int` })
+    .from(postReports)
+    .innerJoin(posts, eq(posts.id, postReports.postId))
+    .where(and(eq(postReports.status, 'open'), ne(posts.status, 'removed')));
+  return n + r;
 }

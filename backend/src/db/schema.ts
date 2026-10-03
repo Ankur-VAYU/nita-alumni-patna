@@ -1,4 +1,4 @@
-import { bigserial, boolean, customType, integer, jsonb, pgEnum, pgTable, smallint, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { bigserial, boolean, customType, date, integer, jsonb, pgEnum, pgTable, smallint, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
 
@@ -134,4 +134,21 @@ export const postReports = pgTable('post_reports', {
   reason: varchar('reason', { length: 120 }).notNull(),
   status: reportStatus('status').notNull().default('open'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const newsKind = pgEnum('news_kind', ['chapter', 'institute']);
+
+export const announcements = pgTable('announcements', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  kind: newsKind('kind').notNull(),
+  tag: varchar('tag', { length: 30 }),
+  title: varchar('title', { length: 160 }).notNull(),
+  body: text('body'),
+  link: varchar('link', { length: 500 }),
+  pinned: boolean('pinned').notNull().default(false),
+  publishedOn: date('published_on').notNull(),
+  createdBy: uuid('created_by'),
+  createdByLabel: varchar('created_by_label', { length: 160 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

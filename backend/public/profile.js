@@ -1,4 +1,5 @@
-// Edit my profile: work, home district, links, mentoring, privacy and photo.
+// My profile: the editable form, laid out like the prototype. Identity fields (name, email, roll number,
+// degree, batch, branch) are checked at verification, so they are shown but only an admin can change them.
 (function () {
   'use strict';
   const { h, api, toast, initials } = window.NITA;
@@ -17,12 +18,18 @@
 
   Promise.all([api('/api/v1/me/profile'), fetch('/api/v1/reference').then((r) => r.json())]).then(([m, ref]) => {
     const errs = {};
-    const field = (name, label, input, hint) => { errs[name] = h('span', { class: 'err' }); return h('div', { class: 'field' }, h('label', { for: 'p-' + name }, label), input, hint ? h('small', { class: 'muted small' }, hint) : null, errs[name]); };
+    const field = (name, label, input, opts = {}) => {
+      errs[name] = h('span', { class: 'err' });
+      return h('div', { class: 'field' + (opts.full ? ' full' : '') }, h('label', { for: 'p-' + name }, label), input, opts.hint ? h('span', { class: 'hint' }, opts.hint) : null, errs[name]);
+    };
     const text = (name, value, type = 'text') => h('input', { id: 'p-' + name, name, type, value: value || '' });
-    const sel = (name, list, value, blank) => h('select', { id: 'p-' + name, name }, blank ? h('option', { value: '' }, blank) : null, list.map((v) => Array.isArray(v) ? h('option', { value: v[0], selected: v[0] === value }, v[1]) : h('option', { value: v, selected: v === value }, v)));
+    const locked = (name, value) => h('input', { id: 'p-' + name, value: value == null ? '' : String(value), readonly: true, title: 'Checked at verification. Ask a chapter admin to correct it.' });
+    const sel = (name, list, value, blank) => h('select', { id: 'p-' + name, name }, blank ? h('option', { value: '' }, blank) : null,
+      list.map((v) => Array.isArray(v) ? h('option', { value: v[0], selected: v[0] === value }, v[1]) : h('option', { value: v, selected: v === value }, v)));
     const vis = [['members', 'All verified alumni'], ['batch', 'Only my batchmates'], ['admins', 'Only chapter admins']];
+    const legend = (t) => h('div', { class: 'legend' }, t);
 
-    const avatar = h('div', { class: 'avatar big' }, m.hasPhoto ? h('img', { src: `/api/v1/members/${m.id}/photo`, alt: '' }) : initials(m.name));
+    const avatar = h('div', { class: 'avatar lg' }, m.hasPhoto ? h('img', { src: `/api/v1/members/${m.id}/photo`, alt: '' }) : initials(m.name));
     const photoInput = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', id: 'p-photo', onchange: async (e) => {
       const f = e.target.files[0]; if (!f) return;
       try { photoData = await resizePhoto(f); removePhoto = false; avatar.replaceChildren(h('img', { src: photoData, alt: '' })); }
@@ -32,19 +39,35 @@
     const mentor = h('input', { type: 'checkbox', id: 'p-mentor', checked: m.openToMentor });
 
     const form = h('form', { class: 'form', novalidate: true },
-      h('div', { class: 'full photo-edit' }, avatar, h('div', { class: 'field' }, h('label', { for: 'p-photo' }, 'Photo'), photoInput, m.hasPhoto ? removeBtn : null, errs.photo = h('span', { class: 'err' }))),
+      h('div', { class: 'full photo-row' }, avatar,
+        h('div', { class: 'field' }, h('label', { for: 'p-photo' }, 'Photo'), photoInput, h('span', { class: 'hint' }, 'A clear face photo helps batchmates recognise you.'), m.hasPhoto ? h('div', {}, removeBtn) : null, errs.photo = h('span', { class: 'err' }))),
+      legend('About you'),
+      field('name', 'Full name (as on degree)', locked('name', m.name), { full: true }),
       field('phone', 'Mobile number', text('phone', m.phone, 'tel')),
+      field('email', 'Email (used to sign in with Google)', locked('email', m.email)),
+      legend('At NIT Agartala'),
+      field('rollNo', 'Roll number', locked('rollNo', m.rollNo || '—')),
+      field('degree', 'Degree', locked('degree', m.degree)),
+      field('batch', 'Batch (passing year)', locked('batch', m.batch)),
+      field('branch', 'Branch / department', locked('branch', m.branch)),
+      legend('Work'),
       field('position', 'Current position', text('position', m.position)),
       field('organisation', 'Current organisation', text('organisation', m.organisation)),
       field('workDistrict', 'Work city / district', text('workDistrict', m.workDistrict)),
       field('workState', 'Working state (or outside India)', sel('workState', ref.workStates, m.workState, 'Select')),
-      field('homeDistrict', 'Home district (Bihar)', sel('homeDistrict', ref.homeDistricts, m.homeDistrict)),
-      field('linkedin', 'LinkedIn profile link', text('linkedin', m.linkedin, 'url'), 'Starts with https://'),
-      field('skills', 'Skills or expertise', text('skills', m.skills)),
+      legend('Home in Bihar'),
+      field('homeDistrict', 'Home district', sel('homeDistrict', ref.homeDistricts, m.homeDistrict)),
+      field('homeState', 'Home state', locked('homeState', 'Bihar')),
+      h('p', { class: 'hint full' }, 'The Patna chapter is for NIT Agartala alumni whose home is in Bihar, wherever they work now.'),
+      legend('Help fellow alumni find you'),
+      field('linkedin', 'LinkedIn profile URL (optional)', text('linkedin', m.linkedin, 'url')),
+      field('skills', 'Skills or expertise (optional)', text('skills', m.skills)),
       h('label', { class: 'check full' }, mentor, ' I am open to mentoring students and junior alumni'),
+      legend('Privacy'),
       field('phoneVisibility', 'Who can see my phone number', sel('phoneVisibility', vis, m.phoneVisibility)),
       field('emailVisibility', 'Who can see my email', sel('emailVisibility', vis, m.emailVisibility)),
-      h('div', { class: 'full actions-row' }, h('button', { class: 'btn' }, 'Save changes'), h('a', { class: 'btn ghost', href: '/me' }, 'Cancel')));
+      h('p', { class: 'hint full' }, 'Your name, photo, batch, branch, position, organisation and districts are visible to all verified alumni. Visitors who are not signed in see nothing. Name, email, roll number, degree, batch and branch were checked at verification; ask a chapter admin to correct them.'),
+      h('div', { class: 'form-actions' }, h('button', { class: 'btn' }, 'Save profile')));
 
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
@@ -54,12 +77,10 @@
       data.openToMentor = mentor.checked;
       if (photoData) data.photo = photoData;
       if (removePhoto) data.removePhoto = true;
-      try { await api('/api/v1/me/profile', { method: 'PUT', json: data }); toast('Saved'); setTimeout(() => (location.href = '/me'), 600); }
+      try { await api('/api/v1/me/profile', { method: 'PUT', json: data }); toast('Profile saved'); setTimeout(() => location.reload(), 700); }
       catch (e) { if (e.fields) Object.entries(e.fields).forEach(([k, v]) => { if (errs[k]) errs[k].textContent = v; }); toast(e.message); }
     });
 
-    root.replaceChildren(h('h1', {}, 'Edit my profile'),
-      h('p', { class: 'muted' }, `${m.name} · ${m.degree} · ${m.branch} · ${m.batch}. To correct your name, email, roll number, degree, branch or batch, contact a chapter admin.`),
-      h('section', { class: 'card' }, form));
+    root.replaceChildren(form);
   }).catch((e) => root.replaceChildren(h('p', { class: 'note bad' }, e.message)));
 })();

@@ -1,32 +1,85 @@
-// Server-rendered pages: sign in, my profile, and the admin shell (admin.js does the rest).
+// Server-rendered pages in the app shell from the agreed prototype: navy sidebar on wide screens,
+// bottom tab bar on phones. Page scripts in /public fill in the interactive parts.
 const esc = (s: unknown) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-function layout(title: string, body: string, opts: { user?: { name: string; role: string } | null; script?: string } = {}) {
+/** Who the page is for. `member` is false for a session opened with the admin key (no member profile). */
+export interface NavUser {
+  name: string;
+  role: string;
+  member: boolean;
+  /** Registrations waiting plus reported posts, shown on the Admin link for staff. */
+  badge?: number;
+}
+type Page = 'home' | 'events' | 'alumni' | 'board' | 'profile' | 'admin' | 'join' | 'signin' | 'other';
+
+const ICONS: Record<string, string> = {
+  home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  events: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  alumni: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16.5 14.6c2.6.1 4.3 1.8 5 4.4"/>',
+  board: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>',
+  profile: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.2 4.1-6.5 8-6.5s7 2.3 8 6.5"/>',
+  admin: '<path d="M12 3l8 3v6c0 4.5-3.3 8.3-8 9-4.7-.7-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+  signin: '<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l4-4-4-4M14 12H4"/>',
+  join: '<circle cx="10" cy="8" r="4"/><path d="M3 21c1-4.2 3.6-6.5 7-6.5 1.4 0 2.7.4 3.8 1.1M18 14v6M15 17h6"/>',
+};
+const icon = (k: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>`;
+
+function navItems(u: NavUser | null | undefined): [Page, string, string, string][] {
+  if (!u) return [['join', 'Join', '/join', 'Join'], ['signin', 'Sign in', '/login', 'Sign in']];
+  if (!u.member) return [['admin', 'Admin', '/admin', 'Admin']];
+  const items: [Page, string, string, string][] = [
+    ['home', 'Home', '/home', 'Home'], ['events', 'Events', '/events', 'Events'], ['alumni', 'Alumni', '/alumni', 'Alumni'],
+    ['board', 'Jobs & Help', '/board', 'Jobs'], ['profile', 'My profile', '/me', 'Profile'],
+  ];
+  if (u.role === 'admin' || u.role === 'moderator') items.push(['admin', 'Admin', '/admin', 'Admin']);
+  return items;
+}
+
+function layout(title: string, body: string, opts: { user?: NavUser | null; active?: Page; script?: string } = {}) {
   const u = opts.user;
+  const items = navItems(u);
+  const cur = (k: Page) => (opts.active === k ? ' aria-current="page"' : '');
+  const badge = (k: Page, dot: boolean) => (k === 'admin' && u?.badge ? (dot ? '<span class="dot"></span>' : `<span class="count">${u.badge}</span>`) : '');
+  const role = u && u.role !== 'member' ? `<em class="pill">${esc(u.role)}</em>` : '';
+  const brand = (size: number) => `<a class="brand" href="${u ? (u.member ? '/home' : '/admin') : '/join'}"><img src="/emblem.svg" alt="" width="${size}" height="${size}"><span><b>NITA Alumni</b><small>Patna Chapter</small></span></a>`;
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${esc(title)} · NITA Alumni Patna</title>
 <link rel="icon" href="/emblem.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Figtree:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="/site.css">
 ${opts.script ? `<script src="/common.js" defer></script><script src="${opts.script}" defer></script>` : ''}
 </head>
 <body>
-<header class="bar">
-  <a class="brand" href="${u ? '/home' : '/join'}"><img src="/emblem.svg" alt="" width="36" height="36"><span><b>NITA Alumni</b><small>Patna Chapter</small></span></a>
-  ${u ? `<nav class="who"><a href="/home">Home</a><a href="/alumni">Alumni</a><a href="/events">Events</a><a href="/board">Jobs &amp; Help</a><a href="/me">My profile</a>${u.role === 'admin' || u.role === 'moderator' ? '<a href="/admin">Admin</a>' : ''}<a href="/logout">Sign out</a><span class="me">${esc(u.name)}${u.role !== 'member' ? ` <em class="pill">${esc(u.role)}</em>` : ''}</span></nav>` : ''}
-</header>
-<main class="page">${body}</main>
-<footer class="foot"><a href="/privacy">Privacy notice</a>${u ? '' : ' · <a href="/join">Join</a> · <a href="/login">Sign in</a>'}</footer>
+<div class="shell">
+  <aside class="side">
+    ${brand(44)}
+    <nav class="nav" aria-label="Main">${items.map(([k, label, href]) => `<a href="${href}"${cur(k)}>${icon(k === 'join' ? 'join' : k)}${esc(label)}${badge(k, false)}</a>`).join('')}</nav>
+    <div class="side-foot">
+      ${u ? `<span><b>${esc(u.name)}</b>${role}</span><a href="/logout">Sign out</a>` : '<span>For NIT Agartala alumni from Bihar</span>'}
+      <a href="/privacy">Privacy notice</a>
+    </div>
+  </aside>
+  <main>
+    <div class="utilbar">${brand(38)}${u ? `<span class="me">${esc(u.name.split(/\s+/)[0])}${role}</span>` : ''}</div>
+    ${body}
+    <p class="page-foot"><a href="/privacy">Privacy notice</a>${u ? ' · <a href="/logout">Sign out</a>' : ''}</p>
+  </main>
+</div>
+<nav class="tabbar" aria-label="Main">${items.map(([k, , href, short]) => `<a href="${href}"${cur(k)}>${icon(k)}${esc(short)}${badge(k, true)}</a>`).join('')}</nav>
 </body>
 </html>`;
 }
+
+/** Page title with the gold rule, an optional line under it and optional buttons on the right. */
+const top = (title: string, sub?: string, extra?: string) =>
+  `<div class="top"><div><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}</div>${extra ? `<div class="row">${extra}</div>` : ''}</div>`;
 
 const MESSAGES: Record<string, [string, string]> = {
   need: ['info', 'Please sign in to continue.'],
@@ -47,66 +100,59 @@ export function loginPage(code: string | undefined, email: string | undefined, g
   const m = code ? MESSAGES[code] : undefined;
   const note = m ? `<p class="note ${m[0]}">${esc(m[1])}${code === 'not_member' && email ? `<br><small>Signed in to Google as ${esc(email)}.</small>` : ''}</p>` : '';
   return layout('Sign in', `
+${top('Sign in', 'For verified NIT Agartala alumni of the Patna Chapter.')}
 <section class="card narrow center">
   <img src="/emblem.svg" alt="" width="84" height="84">
-  <h1>Sign in</h1>
-  <p class="muted">For verified NIT Agartala alumni of the Patna Chapter. Use the Google account with the email in your member profile.</p>
+  <p class="muted">Use the Google account with the email in your member profile.</p>
   ${note}
   ${googleOn ? `<a class="btn google" href="/auth/google"><svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.7 6c4.5-4.2 6.9-10.3 6.9-17.7z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.8-5.8l-7.7-6c-2.1 1.4-4.9 2.3-8.1 2.3-6.2 0-11.5-4.1-13.4-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>Sign in with Google</a>` : '<p class="muted">Google sign-in is not set up yet.</p>'}
-  <p class="muted small">Not a member yet? <a href="/join">Join the chapter</a></p>
+  <p class="muted">Not a member yet? <a href="/join">Join the chapter</a></p>
   <details class="keylogin">
     <summary>Chapter admin: sign in with the admin key</summary>
     <form method="post" action="/auth/key">
-      <label for="key">Admin key</label>
+      <label for="key" class="lbl">Admin key</label>
       <input id="key" name="key" type="password" autocomplete="current-password" required>
       <button class="btn">Sign in</button>
     </form>
   </details>
-</section>`);
+</section>`, { active: 'signin' });
 }
 
-interface MeView {
-  name: string; email: string | null; phone: string; rollNo: string | null; degree: string; branch: string; batch: number;
-  position: string | null; organisation: string | null; homeDistrict: string; workDistrict: string | null; workState: string | null;
-  role: string; title: string | null; status: string; hasPhoto: boolean; id: string;
+export interface MeView {
+  id: string; name: string; status: string; role: string; title: string | null; updatedAt: Date;
 }
+export interface Completeness { pct: number; missing: string[] }
 
-export function mePage(m: MeView, user: { name: string; role: string }) {
-  const row = (k: string, v: unknown) => `<dt>${esc(k)}</dt><dd>${v ? esc(v) : '<span class="muted">Not added</span>'}</dd>`;
+/** My profile: status, completeness, the editable form (profile.js) and the account box. */
+export function mePage(m: MeView, user: NavUser, comp: Completeness, email: string | null) {
+  const roleLine = m.role !== 'member' ? ` · You are a chapter ${esc(m.role)}${m.title ? ` (${esc(m.title)})` : ''}.` : '';
   return layout('My profile', `
-<section class="card">
-  <div class="head">
-    <div class="avatar">${m.hasPhoto ? `<img src="/api/v1/members/${esc(m.id)}/photo" alt="">` : esc(m.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase())}</div>
-    <div><h1>${esc(m.name)}</h1><p class="muted">${esc(m.degree)} · ${esc(m.branch)} · ${esc(m.batch)}${m.title ? ` · <b>${esc(m.title)}</b>` : ''}</p></div>
-  </div>
-  <p class="note ok">Verified member${m.role !== 'member' ? ` · chapter ${esc(m.role)}` : ''}</p>
-  <dl class="kv">
-    ${row('Email', m.email)}${row('Mobile', m.phone)}${row('Roll number', m.rollNo)}
-    ${row('Position', m.position)}${row('Organisation', m.organisation)}
-    ${row('Works in', [m.workDistrict, m.workState].filter(Boolean).join(', '))}${row('Home district', `${m.homeDistrict}, Bihar`)}
-  </dl>
-  <p class="actions-row"><a class="btn" href="/me/edit">Edit my profile</a>${m.role === 'admin' || m.role === 'moderator' ? '<a class="btn ghost" href="/admin">Open admin</a>' : ''}</p>
-  <p class="muted small">Name, email, roll number, degree, branch and batch are checked at verification. To correct them, contact a chapter admin.</p>
-</section>`, { user });
+${top('My profile', `Last updated ${esc(fmtDay(m.updatedAt.toISOString().slice(0, 10)))}. Keep it current so fellow alumni can find you.`)}
+<div class="banner ok"><span class="tag ok">Verified</span><span>Your profile is listed in the alumni directory${roleLine}</span></div>
+${comp.pct < 100 ? `<div class="card section" style="gap:8px"><b>Profile ${comp.pct}% complete</b><div class="meter"><i style="width:${comp.pct}%"></i></div><p class="muted">Missing: ${esc(comp.missing.join(', '))}</p></div>` : ''}
+<div id="profile-edit" class="card"><p class="muted">Loading…</p></div>
+<section class="section">
+  <h2>Account</h2>
+  <div class="card row" style="justify-content:space-between"><span class="muted">Signed in with Google as ${esc(email ?? '')}</span><a class="btn ghost" href="/logout">Sign out</a></div>
+</section>`, { user, active: 'profile', script: '/profile.js' });
 }
 
-export function adminPage(user: { name: string; role: string }) {
+export function adminPage(user: NavUser) {
+  const staffLine = user.role === 'admin'
+    ? 'Run the chapter: verify members, moderate the board, publish events and updates.'
+    : 'Moderator tools: verify members, handle reported posts and publish updates.';
   return layout('Admin', `
-<div id="admin" data-role="${esc(user.role)}" data-name="${esc(user.name)}">
-  <h1>Admin</h1>
-  <p class="muted">Loading…</p>
-</div>`, { user, script: '/admin.js' });
+${top('Admin', staffLine)}
+<div id="admin" data-role="${esc(user.role)}" data-name="${esc(user.name)}"><p class="muted">Loading…</p></div>`, { user, active: 'admin', script: '/admin.js' });
 }
 
-export function privacyPage(contactEmail: string | undefined) {
+export function privacyPage(contactEmail: string | undefined, user?: NavUser | null) {
   const contact = contactEmail
     ? `email <a href="mailto:${esc(contactEmail)}">${esc(contactEmail)}</a>`
     : 'contact any member of the chapter committee';
   return layout('Privacy notice', `
+${top('Privacy notice', 'NIT Agartala Alumni · Patna Chapter')}
 <article class="card prose">
-  <h1>Privacy notice</h1>
-  <p class="muted">NIT Agartala Alumni · Patna Chapter</p>
-
   <h2>Who we are</h2>
   <p>This website is run by volunteers of the Patna Chapter of NIT Agartala alumni, for alumni whose home is in Bihar. It is not run by the institute.</p>
 
@@ -143,69 +189,98 @@ export function privacyPage(contactEmail: string | undefined) {
   <p>You can ask to see, correct or delete your data at any time: ${contact}.</p>
 
   <p class="muted small">Last updated: ${new Date().getFullYear()}.</p>
-</article>`);
+</article>`, { user, active: 'other' });
 }
 
 export interface Stats { members: number; inBihar: number; outsideBihar: number; mentors: number; homeDistricts: number }
 
 const POST_LABEL: Record<string, string> = { job: 'Vacancy', referral: 'Referral', help: 'Help needed', offer: 'Offering help', mentor: 'Mentorship' };
-const fmtIST = (d: Date) => d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+const fmtTime = (d: Date) => d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' }).toUpperCase();
+const fmtDay = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-IN', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' });
+const istParts = (d: Date) => {
+  const p = new Date(d.getTime() + 330 * 60000);
+  return { day: p.getUTCDate(), month: p.toLocaleString('en-IN', { timeZone: 'UTC', month: 'short' }) };
+};
+const rupees = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN')}`;
+/** The person's name from an activity-log label such as "member:Ankur Kumar". */
+const byline = (label: string) => label.replace(/^(member|admin):/, '').replace(/^admin-(api|key)$/, 'Committee');
+
+interface NewsItem { id: string; kind: string; tag: string | null; title: string; body: string | null; link: string | null; pinned: boolean; publishedOn: string; createdByLabel: string }
 
 interface Highlights {
-  nextEvent: { id: string; title: string; startsAt: Date; venue: string; feePaise: number; feeBasis: string; capacity: number | null; people: number } | null;
+  nextEvent: {
+    id: string; title: string; startsAt: Date; venue: string; feePaise: number; feeBasis: string; capacity: number | null; people: number;
+    mine: { guests: number; duePaise: number; paidPaise: number } | null;
+  } | null;
   latestPosts: { id: string; type: string; title: string; district: string; state: string; authorName: string }[];
+  openJobs: number;
+  announcements: NewsItem[];
+  institute: NewsItem[];
 }
 
-export function homePage(user: { name: string; role: string }, stats: Stats, missing: string[], hl: Highlights) {
+function updatesSection(list: NewsItem[], more: boolean) {
+  return `<section class="section">
+  <div class="section-head"><h2>From NIT Agartala</h2><a class="linkbtn" href="https://www.nita.ac.in" target="_blank" rel="noopener noreferrer">nita.ac.in ↗</a></div>
+  ${list.length ? `<div class="card list">${list.map((n) => `<div class="item${n.tag ? '' : ' one'}">${n.tag ? `<span class="tag">${esc(n.tag)}</span>` : ''}<div><h3>${n.link ? `<a href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a>` : esc(n.title)}</h3>${n.body ? `<p class="small">${esc(n.body)}</p>` : ''}<small>${esc(fmtDay(n.publishedOn))}</small></div></div>`).join('')}</div>` : '<div class="card empty">No institute updates yet.</div>'}
+  <p class="hint">Picked from nita.ac.in by the chapter committee.${more ? ' <a href="/news">All updates</a>' : ''}</p>
+</section>`;
+}
+
+function announcementsList(list: NewsItem[]) {
+  return `<div class="card list">${list.map((n) => `<div class="item one"><div>${n.pinned ? '<div class="pin">PINNED</div>' : ''}<h3>${esc(n.title)}</h3>${n.body ? `<p class="body">${esc(n.body)}</p>` : ''}${n.link ? `<p><a href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">Open link ↗</a></p>` : ''}<small>${esc(fmtDay(n.publishedOn))} · ${esc(byline(n.createdByLabel))}</small></div></div>`).join('')}</div>`;
+}
+
+export function homePage(user: NavUser, stats: Stats, comp: Completeness, hl: Highlights) {
   const first = user.name.split(/\s+/)[0];
+  const e = hl.nextEvent;
+  let eventCard = '';
+  if (e) {
+    const d = istParts(e.startsAt);
+    const status = e.mine
+      ? `<span class="btn on">Going${e.mine.guests ? ` · +${e.mine.guests}` : ''}</span>${e.feePaise ? (e.mine.paidPaise >= e.mine.duePaise ? '<span class="tag ok">Paid</span>' : `<span class="tag gold">${rupees(e.mine.duePaise)} due at venue</span>`) : ''}<a class="linkbtn" href="/events">Change</a>`
+      : '<a class="btn" href="/events">RSVP</a>';
+    eventCard = `<div class="card hero-event"><div class="datebox"><b>${d.day}</b><span>${esc(d.month)}</span></div>
+  <div class="section" style="gap:6px"><div class="eyebrow">Next event</div><h2>${esc(e.title)}</h2>
+  <p class="muted">${esc(fmtTime(e.startsAt))} · ${esc(e.venue)} · ${e.feePaise ? `${rupees(e.feePaise)} per ${esc(e.feeBasis)}` : 'Free'}</p>
+  <div class="row">${status}<span class="muted">${e.people}${e.capacity ? ` of ${e.capacity}` : ''} places taken</span></div></div></div>`;
+  }
   return layout('Home', `
-<section class="hero-band">
-  <div>
-    <p class="eyebrow">NIT Agartala alumni · Patna Chapter</p>
-    <h1>Namaste, ${esc(first)}</h1>
-    <p>Alumni from Bihar, wherever they work.</p>
-  </div>
-  <img src="/emblem.svg" alt="" width="88" height="88">
-</section>
-${missing.length ? `<section class="card"><p class="note warn">Your profile is missing: ${esc(missing.join(', '))}. Complete profiles are easier for fellow alumni to find.</p><p><a class="btn" href="/me/edit">Complete my profile</a></p></section>` : ''}
-<section class="stats">
+${top(`Namaste, ${esc(first)}`, 'NIT Agartala alumni from Bihar, wherever they work.')}
+${comp.pct < 100 ? `<div class="card section" style="gap:8px"><div class="section-head"><b>Your profile is ${comp.pct}% complete</b><a class="linkbtn" href="/me">Complete profile</a></div><div class="meter"><i style="width:${comp.pct}%"></i></div><p class="muted">Missing: ${esc(comp.missing.join(', '))}. Complete profiles are easier for fellow alumni to find.</p></div>` : ''}
+${eventCard}
+${hl.announcements.length ? `<section class="section"><div class="section-head"><h2>Chapter announcements</h2><a class="linkbtn" href="/news">See all</a></div>${announcementsList(hl.announcements)}</section>` : ''}
+<div class="stats">
   <div class="card stat"><b>${stats.members}</b><span>verified alumni</span></div>
   <div class="card stat"><b>${stats.inBihar}</b><span>working in Bihar</span></div>
   <div class="card stat"><b>${stats.outsideBihar}</b><span>working outside Bihar</span></div>
-  <div class="card stat"><b>${stats.mentors}</b><span>open to mentoring</span></div>
-</section>
-<section class="tiles">
-  <a class="card tile" href="/alumni"><h2>Alumni directory</h2><p class="muted">Find batchmates by name, branch, batch, home district or where they work.</p></a>
-  <a class="card tile" href="/me"><h2>My profile</h2><p class="muted">Your details, photo, and who can see your phone and email.</p></a>
-  ${user.role === 'admin' || user.role === 'moderator' ? '<a class="card tile" href="/admin"><h2>Admin</h2><p class="muted">Review registrations and manage members.</p></a>' : ''}
-</section>
-<section class="tiles two">
-  <div class="card">
-    <p class="eyebrow-ink">Next event</p>
-    ${hl.nextEvent ? `<h2>${esc(hl.nextEvent.title)}</h2><p class="muted">${esc(fmtIST(hl.nextEvent.startsAt))} · ${esc(hl.nextEvent.venue)}</p>
-    <p class="muted small">${hl.nextEvent.people} going${hl.nextEvent.capacity ? ` of ${hl.nextEvent.capacity} places` : ''} · ${hl.nextEvent.feePaise ? `₹${(hl.nextEvent.feePaise / 100).toLocaleString('en-IN')} per ${hl.nextEvent.feeBasis}` : 'Free'}</p>
-    <p><a class="btn" href="/events">RSVP</a></p>` : '<p class="muted">No upcoming events yet.</p><p><a class="btn ghost" href="/events">See events</a></p>'}
-  </div>
-  <div class="card">
-    <p class="eyebrow-ink">Latest on the Jobs &amp; Help board</p>
-    ${hl.latestPosts.length ? `<ul class="plain">${hl.latestPosts.map((p) => `<li><span class="tag ${esc(p.type)}">${esc(POST_LABEL[p.type] ?? p.type)}</span> ${esc(p.title)} <span class="muted small">· ${esc(p.district)}, ${esc(p.state)} · ${esc(p.authorName)}</span></li>`).join('')}</ul>` : '<p class="muted">Nothing posted yet. Share a vacancy or ask for help.</p>'}
-    <p><a class="btn ghost" href="/board">Open the board</a></p>
-  </div>
-</section>`, { user });
+  <div class="card stat"><b>${hl.openJobs}</b><span>open vacancies and referrals</span></div>
+</div>
+<div class="grid2">
+  ${updatesSection(hl.institute, true)}
+  <section class="section">
+    <div class="section-head"><h2>Latest on the board</h2><a class="linkbtn" href="/board">See all</a></div>
+    ${hl.latestPosts.length ? `<div class="card list">${hl.latestPosts.map((p) => `<div class="item"><span class="tag ${esc(p.type)}">${esc(POST_LABEL[p.type] ?? p.type)}</span><div><h3>${esc(p.title)}</h3><small>${esc(p.district)}, ${esc(p.state)} · ${esc(p.authorName)}</small></div></div>`).join('')}</div>` : '<div class="card empty">Nothing posted yet. <a href="/board">Share a vacancy or ask for help.</a></div>'}
+  </section>
+</div>`, { user, active: 'home' });
 }
 
-export function alumniPage(user: { name: string; role: string }) {
-  return layout('Alumni', `<div id="directory"><h1>Alumni directory</h1><p class="muted">Loading…</p></div>`, { user, script: '/directory.js' });
+export function newsPage(user: NavUser, chapter: NewsItem[], institute: NewsItem[]) {
+  const staff = user.role === 'admin' || user.role === 'moderator';
+  return layout('News', `
+${top('News', 'Chapter announcements and updates from NIT Agartala.', staff ? '<a class="btn" href="/admin#content">Post news</a>' : '')}
+<section class="section"><h2>Chapter announcements</h2>${chapter.length ? announcementsList(chapter) : '<div class="card empty">No announcements yet.</div>'}</section>
+${updatesSection(institute, false)}`, { user, active: 'home' });
 }
 
-export function editProfilePage(user: { name: string; role: string }) {
-  return layout('Edit my profile', `<div id="profile-edit"><h1>Edit my profile</h1><p class="muted">Loading…</p></div>`, { user, script: '/profile.js' });
+export function alumniPage(user: NavUser) {
+  return layout('Alumni', `<div id="directory">${top('Alumni directory', 'Loading…')}</div>`, { user, active: 'alumni', script: '/directory.js' });
 }
 
-export function eventsPage(user: { name: string; role: string }) {
-  return layout('Events', `<div id="events"><h1>Events</h1><p class="muted">Loading…</p></div>`, { user, script: '/events.js' });
+export function eventsPage(user: NavUser) {
+  return layout('Events', `<div id="events" data-role="${esc(user.role)}">${top('Events', 'Alumni meets and chapter activities. Places count you and your guests.')}<p class="muted">Loading…</p></div>`, { user, active: 'events', script: '/events.js' });
 }
 
-export function boardPage(user: { name: string; role: string }) {
-  return layout('Jobs & Help', `<div id="board"><h1>Jobs &amp; Help</h1><p class="muted">Loading…</p></div>`, { user, script: '/board.js' });
+export function boardPage(user: NavUser) {
+  return layout('Jobs & Help', `<div id="board">${top('Jobs &amp; Help', 'Loading…')}</div>`, { user, active: 'board', script: '/board.js' });
 }
+

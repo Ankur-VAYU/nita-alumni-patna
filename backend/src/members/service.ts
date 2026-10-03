@@ -497,7 +497,7 @@ export const DIRECTORY_PAGE = 60;
 export async function listDirectory(
   db: Db,
   viewerId: string,
-  f: { q?: string; branch?: string; batch?: number; homeDistrict?: string; workState?: string; mentor?: boolean; offset?: number },
+  f: { q?: string; branch?: string; batch?: number; homeDistrict?: string; workState?: string; workDistrict?: string; mentor?: boolean; offset?: number },
 ) {
   const viewer = await viewerFor(db, viewerId);
   if (!viewer) throw notFound('Member not found');
@@ -510,6 +510,7 @@ export async function listDirectory(
   if (f.batch) where.push(eq(members.batch, f.batch));
   if (f.homeDistrict) where.push(eq(members.homeDistrict, f.homeDistrict));
   if (f.workState) where.push(eq(members.workState, f.workState));
+  if (f.workDistrict) where.push(sql`lower(trim(${members.workDistrict})) = lower(${f.workDistrict})`);
   if (f.mentor) where.push(eq(members.openToMentor, true));
   const rows = await db
     .select({
@@ -542,6 +543,27 @@ export async function getDirectoryPhoto(db: Db, id: string) {
   const [row] = await db.select({ data: members.photo, type: members.photoType, status: members.status }).from(members).where(eq(members.id, id));
   if (!row?.data || !row.type || row.status !== 'verified') throw notFound('No photo');
   return { data: row.data, type: row.type };
+}
+
+/** For the directory's side panel: how many verified members work in each city and come from each home district. */
+export async function directorySummary(db: Db, viewerId: string) {
+  const work = await db
+    .select({ place: sql<string>`initcap(trim(${members.workDistrict}))`, n: sql<number>`count(*)::int` })
+    .from(members)
+    .where(and(eq(members.status, 'verified'), sql`coalesce(trim(${members.workDistrict}), '') <> ''`))
+    .groupBy(sql`initcap(trim(${members.workDistrict}))`)
+    .orderBy(sql`count(*) DESC`, sql`1`)
+    .limit(12);
+  const home = await db
+    .select({ place: members.homeDistrict, n: sql<number>`count(*)::int` })
+    .from(members)
+    .where(eq(members.status, 'verified'))
+    .groupBy(members.homeDistrict)
+    .orderBy(sql`count(*) DESC`, members.homeDistrict)
+    .limit(12);
+  const [me] = await db.select({ batch: members.batch, homeDistrict: members.homeDistrict, workDistrict: members.workDistrict }).from(members).where(eq(members.id, viewerId));
+  const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(members).where(eq(members.status, 'verified'));
+  return { total, work, home, me: me ?? null };
 }
 
 export async function chapterStats(db: Db) {
@@ -587,4 +609,19 @@ export async function updateOwnProfile(db: Db, id: string, input: ProfileUpdateI
   const changed = (Object.keys(set) as (keyof typeof set)[]).filter((k) => k !== 'updatedAt' && k !== 'photo' && k !== 'photoType' && (before as Record<string, unknown>)[k] !== set[k]);
   await audit(db, `member:${before.name}`, 'member.profile_updated', id, { fields: [...changed, ...(photo ? ['photo'] : removePhoto ? ['photo removed'] : [])].join(', ') });
   return getMember(db, id);
+}
+
+/** How complete a profile is, as on the prototype: the share of these 15 fields that are filled in. */
+export function profileCompleteness(m: {
+  hasPhoto: boolean; name: string; phone: string; email: string | null; batch: number; branch: string; degree: string;
+  position: string | null; organisation: string | null; workDistrict: string | null; workState: string | null;
+  homeDistrict: string; linkedin: string | null; skills: string | null;
+}) {
+  const fields: [unknown, string][] = [
+    [m.hasPhoto, 'photo'], [m.name, 'name'], [m.phone, 'mobile number'], [m.email, 'email'], [m.batch, 'batch'], [m.branch, 'branch'],
+    [m.degree, 'degree'], [m.position, 'current position'], [m.organisation, 'organisation'], [m.workDistrict, 'work district'],
+    [m.workState, 'working state'], [m.homeDistrict, 'home district'], [true, 'home state'], [m.linkedin, 'LinkedIn'], [m.skills, 'skills'],
+  ];
+  const missing = fields.filter(([v]) => !v).map(([, label]) => label);
+  return { pct: Math.round(((fields.length - missing.length) / fields.length) * 100), missing };
 }

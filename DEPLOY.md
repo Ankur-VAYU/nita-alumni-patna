@@ -236,6 +236,7 @@ a new empty database: `gunzip -c backups/<file>.sql.gz | psql "<new database URL
 
 - Sign-in is with Google only. Members without a Google account (or whose profile has no email) cannot sign in yet; an admin can add the email in the admin pages.
 - No WhatsApp or email messages yet; applicants are not told automatically when they are approved.
+- NIT Agartala updates are added by an admin or moderator (Admin → Content), with a link to the notice on nita.ac.in. They are not fetched automatically.
 - Event contributions are paid at the venue (cash or UPI) and recorded by an admin with "Mark paid". Online payment needs a payment-gateway account (for example Razorpay) in the chapter's name.
 - Proof documents are limited to 500 KB to stay within the free plan's CPU limit.
 

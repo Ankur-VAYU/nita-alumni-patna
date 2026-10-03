@@ -6,15 +6,15 @@
   const TYPES = { job: 'Vacancy', referral: 'Referral', help: 'Help needed', offer: 'Offering help', mentor: 'Mentorship' };
   const REASONS = ['Asks for money or a fee', 'Paid placement agency', 'Wrong or misleading information', 'Promotional, not relevant', 'Inappropriate content'];
   const state = { type: '', state: '', mine: false, closed: false };
-  const listEl = h('div', { class: 'list' });
+  const listEl = h('div', { class: 'stack' });
   const fmt = (d) => new Date(d).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' });
   let ref;
 
   function postCard(p) {
     const extra = h('div', { hidden: true });
     const status = p.status !== 'open' ? h('span', { class: 'tag ' + (p.status === 'filled' ? 'ok' : '') }, p.status === 'filled' ? 'Filled' : 'Closed')
-      : p.expired ? h('span', { class: 'tag' }, 'Expired') : h('span', { class: 'muted small' }, `Open · closes ${fmt(p.expiresAt)}`);
-    const actions = h('div', { class: 'actions-row' });
+      : p.expired ? h('span', { class: 'tag' }, 'Expired') : h('span', { class: 'muted' }, `Open · closes ${fmt(p.expiresAt)}${p.interested && !p.isMine ? ` · ${p.interested} interested` : ''}`);
+    const actions = h('div', { class: 'actions' });
     const open = p.status === 'open' && !p.expired;
     if (p.isMine || p.canManage) {
       if (p.isMine) actions.append(h('button', { class: 'btn ghost small', type: 'button', onclick: async () => {
@@ -36,16 +36,16 @@
     }
     if (!p.isMine) {
       const reason = h('select', { 'aria-label': 'Reason' }, REASONS.map((r) => h('option', {}, r)));
-      const box = h('div', { class: 'actions-row', hidden: true }, reason, h('button', { class: 'btn danger small', type: 'button', onclick: async () => {
+      const box = h('div', { class: 'actions', hidden: true }, reason, h('button', { class: 'btn danger small', type: 'button', onclick: async () => {
         try { await api(`/api/v1/posts/${p.id}/report`, { json: { reason: reason.value } }); toast('Reported to the moderators'); load(); } catch (e) { toast(e.message); }
       } }, 'Send report'));
-      actions.append(h('button', { class: 'linkish', type: 'button', disabled: p.iReported, onclick: () => (box.hidden = !box.hidden) }, p.iReported ? 'Reported' : 'Report'), box);
+      actions.append(h('button', { class: 'linkbtn', type: 'button', disabled: p.iReported, onclick: () => (box.hidden = !box.hidden) }, p.iReported ? 'Reported' : 'Report'), box);
     }
-    return h('article', { class: 'card post' + (open ? '' : ' past') },
-      h('div', { class: 'actions-row' }, h('span', { class: 'tag ' + p.type }, TYPES[p.type]), h('span', { class: 'muted small' }, `${p.district}, ${p.state}${p.organisation ? ' · ' + p.organisation : ''}`)),
-      h('h2', {}, p.title), h('p', { class: 'body' }, p.body),
-      p.applyLink ? h('p', {}, h('a', { href: p.applyLink, target: '_blank', rel: 'noopener' }, 'Apply or read more')) : null,
-      h('p', { class: 'muted small' }, `${p.authorName} · ${p.authorBranch} ${p.authorBatch} · posted ${fmt(p.createdAt)}`),
+    return h('article', { class: 'card post' + (open ? '' : ' closed') },
+      h('div', { class: 'post-head' }, h('span', { class: 'tag ' + p.type }, TYPES[p.type]), h('h3', {}, p.title)),
+      h('div', { class: 'where' }, `${p.district}, ${p.state}${p.organisation ? ' · ' + p.organisation : ''} · posted by ${p.authorName} (${p.authorBranch} ${p.authorBatch}) on ${fmt(p.createdAt)}`),
+      h('p', { class: 'body' }, p.body),
+      p.applyLink ? h('p', {}, h('a', { href: p.applyLink, target: '_blank', rel: 'noopener' }, 'Apply or read more ↗')) : null,
       h('div', { class: 'post-foot' }, status, actions), extra);
   }
 
@@ -57,7 +57,7 @@
     if (state.closed) qs.set('closed', 'true');
     try {
       const list = await api('/api/v1/posts?' + qs);
-      listEl.replaceChildren(...(list.length ? list.map(postCard) : [h('p', { class: 'card muted' }, 'Nothing here yet. Share a vacancy in your organisation or ask fellow alumni for help.')]));
+      listEl.replaceChildren(...(list.length ? list.map(postCard) : [h('div', { class: 'card empty' }, 'Nothing here yet. Share a vacancy in your organisation or ask fellow alumni for help.')]));
     } catch (e) { listEl.replaceChildren(h('p', { class: 'note bad' }, e.message)); }
   }
 
@@ -73,15 +73,15 @@
       f('state', 'State', h('select', { id: 'n-state', name: 'state' }, ref.workStates.map((s) => h('option', { value: s, selected: s === 'Bihar' }, s)))),
       f('applyLink', 'Application link (optional)', h('input', { id: 'n-applyLink', name: 'applyLink', type: 'url', placeholder: 'https://' })),
       f('expiresInDays', 'Close the post after', h('select', { id: 'n-expiresInDays', name: 'expiresInDays' }, [['15', '15 days'], ['30', '30 days'], ['60', '60 days']].map(([v, l]) => h('option', { value: v, selected: v === '30' }, l)))),
-      h('p', { class: 'note info full' }, 'Posting rules: no fees, deposits or paid placement offers; share only your own contact details; mark the post filled when done.'),
-      h('div', { class: 'full actions-row' }, h('button', { class: 'btn' }, 'Post'), h('button', { class: 'btn ghost', type: 'button', onclick: () => (wrap.hidden = true) }, 'Cancel')));
+      h('div', { class: 'rules full' }, h('b', {}, 'Posting rules'), h('ul', {}, h('li', {}, 'No fees, deposits or paid placement offers.'), h('li', {}, 'Share only your own contact details.'), h('li', {}, 'Mark the post filled when done.'))),
+      h('div', { class: 'form-actions' }, h('button', { class: 'btn ghost', type: 'button', onclick: () => (wrap.hidden = true) }, 'Cancel'), h('button', { class: 'btn' }, 'Post')));
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       Object.values(errs).forEach((e) => (e.textContent = ''));
       try { await api('/api/v1/posts', { json: Object.fromEntries(new FormData(form)) }); toast('Posted'); form.reset(); wrap.hidden = true; load(); }
       catch (e) { if (e.fields) Object.entries(e.fields).forEach(([k, v]) => { if (errs[k]) errs[k].textContent = v; }); toast(e.message); }
     });
-    const wrap = h('section', { class: 'card', hidden: true }, h('h2', {}, 'New post'), form);
+    const wrap = h('section', { class: 'card section', hidden: true }, h('h2', {}, 'New post'), form);
     return wrap;
   }
 
@@ -93,9 +93,9 @@
     const st = h('select', { 'aria-label': 'State', onchange: () => { state.state = st.value; load(); } }, h('option', { value: '' }, 'All states'), r.workStates.map((s) => h('option', { value: s }, s)));
     const tog = (key, label) => h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: (e) => { state[key] = e.target.checked; load(); } }), ' ' + label);
     root.replaceChildren(
-      h('div', { class: 'toolbar between' }, h('div', {}, h('h1', {}, 'Jobs & Help'), h('p', { class: 'muted' }, 'Vacancies, referrals, mentoring and help between alumni. Posts close automatically when they expire.')),
-        h('button', { class: 'btn', type: 'button', onclick: () => { comp.hidden = false; comp.scrollIntoView({ behavior: 'smooth' }); } }, 'New post')),
-      comp, h('div', { class: 'card filters' }, chips, st, tog('mine', 'Only my posts'), tog('closed', 'Show filled and expired')), listEl);
+      h('div', { class: 'top' }, h('div', {}, h('h1', {}, 'Jobs & Help'), h('p', {}, 'Vacancies in your organisation, referrals, mentoring, and requests for help. Posts close automatically when they expire.')),
+        h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: () => { comp.hidden = false; comp.scrollIntoView({ behavior: 'smooth' }); } }, 'New post'))),
+      comp, h('div', { class: 'board-bar' }, chips, h('div', { class: 'row' }, st, tog('mine', 'My posts'), tog('closed', 'Show filled and expired'))), listEl);
     load();
   });
 })();

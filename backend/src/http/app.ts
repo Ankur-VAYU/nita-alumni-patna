@@ -12,14 +12,17 @@ import { BIHAR_DISTRICTS, BRANCHES, DEGREES, FIRST_BATCH_YEAR, TITLES, WORK_STAT
 import { adminCreateInput, directoryQuery, fieldErrors, joinInput, profileUpdateInput, rejectInput, roleInput } from '../members/schemas.js';
 import {
   approveMember, createByAdmin, exportMembersCsv, getFile, getMember, importBatchList, importMembers,
-  chapterStats, findMemberByEmail, getDirectoryPhoto, getSessionMember, listAudit, listDirectory, listMembers, recordSignIn, registerFromForm,
-  rejectMember, setRole, setStatus, updateOwnProfile,
+  chapterStats, directorySummary, findMemberByEmail, getDirectoryPhoto, getSessionMember, listAudit, listDirectory, listMembers, recordSignIn, registerFromForm,
+  rejectMember, setRole, setStatus, updateOwnProfile, profileCompleteness,
 } from '../members/service.js';
-import { adminPage, alumniPage, boardPage, editProfilePage, eventsPage, homePage, loginPage, mePage, privacyPage } from './pages.js';
+import { adminPage, alumniPage, boardPage, eventsPage, homePage, loginPage, mePage, newsPage, privacyPage, type NavUser } from './pages.js';
+import { newsInput, newsQuery } from '../news/schemas.js';
+import { createNews, deleteNews, listNews, newsHighlights, updateNews } from '../news/service.js';
+import { adminOverview, batchListInfo } from '../admin/overview.js';
 import { eventInput, postInput, postListQuery, postStatusInput, reportInput, rsvpInput } from '../community/schemas.js';
 import {
   attendees, cancelRsvp, createEvent, createPost, dismissReports, eventPayments, homeHighlights, interestedIn, listEvents,
-  listPosts, listReports, recordPayment, removePost, reportPost, rsvp, setEventStatus, setPostStatus, toggleInterest, updateEvent,
+  listPosts, listReports, recordPayment, removePost, reportPost, rsvp, setEventStatus, setPostStatus, staffBadge, toggleInterest, updateEvent,
 } from '../community/service.js';
 import joinTemplate from './join-template.js';
 
@@ -72,6 +75,8 @@ const FORM_CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' https://fonts.googleapis.com",
+  // Only style="" attributes (bar and meter widths); <style> blocks and all inline scripts stay blocked.
+  "style-src-attr 'unsafe-inline'",
   'font-src https://fonts.gstatic.com',
   "img-src 'self' data: blob:",
   "connect-src 'self'",
@@ -257,10 +262,11 @@ export function createHttpApp(opts: HttpOptions) {
     c.header('cache-control', 'no-store');
   };
 
-  app.get('/privacy', (c) => {
+  app.get('/privacy', withDb, async (c) => {
     c.header('content-security-policy', FORM_CSP);
-    c.header('cache-control', 'public, max-age=3600');
-    return c.html(privacyPage(opts.contactEmail));
+    c.header('cache-control', 'private, no-store');
+    const who = await currentActor(c);
+    return c.html(privacyPage(opts.contactEmail, who ? await navFor(c, who) : null));
   });
 
   app.get('/login', (c) => {
@@ -325,45 +331,51 @@ export function createHttpApp(opts: HttpOptions) {
 
   app.get('/', withDb, async (c) => c.redirect((await currentActor(c)) ? '/home' : '/join'));
 
+  /** What the sidebar shows: the person, and for staff the number of things waiting for them. */
+  async function navFor(c: Context<Env>, who: Actor): Promise<NavUser> {
+    return { name: who.name, role: who.role, member: who.kind === 'member', badge: isStaff(who.role) ? await staffBadge(c.var.db) : 0 };
+  }
+
   /** Pages for signed-in members. A session opened with the admin key has no member profile. */
   async function memberPage(c: Context<Env>) {
     const who = await currentActor(c);
     if (!who) return { redirect: toLogin(c, 'need') };
     if (who.kind !== 'member' || !who.id) return { redirect: c.redirect('/admin') };
     pageHeaders(c);
-    return { who: who as Actor & { id: string } };
+    return { who: who as Actor & { id: string }, nav: await navFor(c, who) };
   }
 
   app.get('/home', withDb, async (c) => {
     const r = await memberPage(c);
     if (r.redirect) return r.redirect;
     const m = await getMember(c.var.db, r.who.id);
-    const missing = [
-      !m.hasPhoto && 'photo', !m.position && 'position', !m.organisation && 'organisation',
-      !m.workDistrict && 'work city', !m.linkedin && 'LinkedIn', !m.skills && 'skills',
-    ].filter(Boolean) as string[];
-    return c.html(homePage(r.who, await chapterStats(c.var.db), missing, await homeHighlights(c.var.db)));
+    const hl = { ...(await homeHighlights(c.var.db, r.who.id)), ...(await newsHighlights(c.var.db)) };
+    return c.html(homePage(r.nav, await chapterStats(c.var.db), profileCompleteness(m), hl));
   });
 
   app.get('/alumni', withDb, async (c) => {
     const r = await memberPage(c);
-    return r.redirect ?? c.html(alumniPage(r.who));
+    return r.redirect ?? c.html(alumniPage(r.nav));
   });
 
   app.get('/events', withDb, async (c) => {
     const r = await memberPage(c);
-    return r.redirect ?? c.html(eventsPage(r.who));
+    return r.redirect ?? c.html(eventsPage(r.nav));
   });
 
   app.get('/board', withDb, async (c) => {
     const r = await memberPage(c);
-    return r.redirect ?? c.html(boardPage(r.who));
+    return r.redirect ?? c.html(boardPage(r.nav));
   });
 
-  app.get('/me/edit', withDb, async (c) => {
+  app.get('/news', withDb, async (c) => {
     const r = await memberPage(c);
-    return r.redirect ?? c.html(editProfilePage(r.who));
+    if (r.redirect) return r.redirect;
+    const [chapter, institute] = await Promise.all([listNews(c.var.db, { kind: 'chapter' }), listNews(c.var.db, { kind: 'institute' })]);
+    return c.html(newsPage(r.nav, chapter, institute));
   });
+
+  app.get('/me/edit', (c) => c.redirect('/me'));
 
   /* ---------- member API (signed-in, verified members) ---------- */
 
@@ -380,6 +392,7 @@ export function createHttpApp(opts: HttpOptions) {
     const f = await getDirectoryPhoto(c.var.db, c.req.param('id'));
     return c.body(new Uint8Array(f.data), 200, { 'content-type': f.type, 'cache-control': 'private, max-age=300' });
   });
+  app.get('/api/v1/members/summary', withDb, requireMember, async (c) => c.json(await directorySummary(c.var.db, c.var.actor.id!)));
   app.get('/api/v1/stats', withDb, requireMember, async (c) => c.json(await chapterStats(c.var.db)));
   app.get('/api/v1/me/profile', withDb, requireMember, async (c) => c.json(await getMember(c.var.db, c.var.actor.id!)));
   const me = (c: Context<Env>) => c.var.actor.id!;
@@ -400,6 +413,8 @@ export function createHttpApp(opts: HttpOptions) {
   app.post('/api/v1/posts/:id/report', withDb, requireMember, async (c) =>
     c.json(await reportPost(c.var.db, pid(c), me(c), parse(reportInput, await readJson(c)).reason)));
 
+  app.get('/api/v1/news', withDb, requireMember, async (c) => c.json(await listNews(c.var.db, parse(newsQuery, c.req.query()))));
+
   app.put('/api/v1/me/profile', withDb, requireMember, async (c) => {
     const input = parse(profileUpdateInput, await readJson(c, 600 * 1024));
     return c.json(await updateOwnProfile(c.var.db, c.var.actor.id!, input));
@@ -410,7 +425,8 @@ export function createHttpApp(opts: HttpOptions) {
     if (!who) return toLogin(c, 'need');
     if (who.kind !== 'member' || !who.id) return c.redirect('/admin');
     pageHeaders(c);
-    return c.html(mePage(await getMember(c.var.db, who.id), who));
+    const m = await getMember(c.var.db, who.id);
+    return c.html(mePage(m, await navFor(c, who), profileCompleteness(m), m.email));
   });
 
   app.get('/admin', withDb, async (c) => {
@@ -418,7 +434,7 @@ export function createHttpApp(opts: HttpOptions) {
     if (!who) return toLogin(c, 'need');
     if (!isStaff(who.role)) return c.redirect('/me');
     pageHeaders(c);
-    return c.html(adminPage(who));
+    return c.html(adminPage(await navFor(c, who)));
   });
 
   app.get('/api/v1/me', withDb, async (c) => {
@@ -504,6 +520,14 @@ export function createHttpApp(opts: HttpOptions) {
   admin.post('/posts/:id/remove', async (c) => c.json(await removePost(c.var.db, id(c), actorOf(c))));
   admin.post('/posts/:id/dismiss', async (c) => c.json(await dismissReports(c.var.db, id(c), actorOf(c))));
 
+  // Announcements and NIT Agartala updates: admins and moderators.
+  admin.get('/news', async (c) => c.json(await listNews(c.var.db, parse(newsQuery, c.req.query()))));
+  admin.post('/news', async (c) => c.json(await createNews(c.var.db, parse(newsInput, await readJson(c)), { id: c.var.actor.id, label: actorOf(c) }), 201));
+  admin.put('/news/:id', async (c) => c.json(await updateNews(c.var.db, id(c), parse(newsInput, await readJson(c)), actorOf(c))));
+  admin.delete('/news/:id', async (c) => c.json(await deleteNews(c.var.db, id(c), actorOf(c))));
+
+  admin.get('/overview', async (c) => c.json(await adminOverview(c.var.db)));
+  admin.get('/batch-list', adminOnly, async (c) => c.json(await batchListInfo(c.var.db, parse(z.object({ q: z.string().trim().max(80).optional() }), c.req.query()).q)));
   admin.post('/batch-list', adminOnly, async (c) => c.json(await importBatchList(c.var.db, await csvBody(c), actorOf(c))));
   admin.get('/audit', async (c) =>
     c.json(await listAudit(c.var.db, parse(z.object({ limit: z.coerce.number().int().min(1).max(500).optional() }), c.req.query()).limit)),

@@ -206,6 +206,73 @@ describe('jobs & help board', () => {
   });
 });
 
+describe('news', () => {
+  const chapter = (over: Record<string, unknown> = {}) => ({ kind: 'chapter', title: 'Volunteers needed for the meet', body: 'Six volunteers for registration.', ...over });
+
+  it('lets admins and moderators post; members only read', async () => {
+    const mod = await member({ role: 'moderator' });
+    const m = await member();
+    expect((await mod.req('POST', '/api/v1/admin/news', chapter({ pinned: true }))).statusCode).toBe(201);
+    expect((await m.req('POST', '/api/v1/admin/news', chapter())).statusCode).toBe(403);
+    const list = (await m.req('GET', '/api/v1/news')).json();
+    expect(list[0]).toMatchObject({ kind: 'chapter', pinned: true, createdByLabel: `member:${mod.name}` });
+    expect((await t.inject('/api/v1/news')).statusCode).toBe(401);
+  });
+
+  it('validates by kind and shows pinned announcements and updates on the home page', async () => {
+    const bad = await t.inject({ method: 'POST', url: '/api/v1/admin/news', headers: admin, payload: { kind: 'institute', title: 'Convocation notice' } });
+    expect(bad.json().fields.link).toBeTruthy();
+    const js = await t.inject({ method: 'POST', url: '/api/v1/admin/news', headers: admin, payload: { kind: 'institute', title: 'Convocation notice', link: 'javascript:alert(1)' } });
+    expect(js.statusCode).toBe(400);
+    expect((await t.inject({ method: 'POST', url: '/api/v1/admin/news', headers: admin, payload: chapter({ body: '' }) })).json().fields.body).toBeTruthy();
+    await t.inject({ method: 'POST', url: '/api/v1/admin/news', headers: admin, payload: { kind: 'institute', tag: 'Notice', title: 'Convocation registration open', link: 'https://www.nita.ac.in/notice', publishedOn: '2026-09-18' } });
+    const a = (await t.inject({ method: 'POST', url: '/api/v1/admin/news', headers: admin, payload: chapter({ pinned: true }) })).json();
+    const m = await member();
+    const home = await t.inject({ url: '/home', headers: { cookie: m.cookie } });
+    expect(home.body).toContain('Volunteers needed for the meet');
+    expect(home.body).toContain('Convocation registration open');
+    expect(home.body).toContain('href="https://www.nita.ac.in/notice"');
+    const upd = await t.inject({ method: 'PUT', url: `/api/v1/admin/news/${a.id}`, headers: admin, payload: chapter({ title: 'Volunteers still needed' }) });
+    expect(upd.json()).toMatchObject({ title: 'Volunteers still needed', pinned: false });
+    expect((await t.inject({ method: 'DELETE', url: `/api/v1/admin/news/${a.id}`, headers: admin })).json()).toEqual({ deleted: true });
+    expect((await t.inject({ url: '/news', headers: { cookie: m.cookie } })).body).not.toContain('Volunteers still needed');
+  });
+});
+
+describe('admin overview and batch list', () => {
+  it('counts what needs attention', async () => {
+    await member({ role: 'admin' });
+    const e = await makeEvent({ feeRupees: 200 });
+    const a = await member();
+    await a.req('POST', `/api/v1/events/${e.id}/rsvp`, { guests: 1 });
+    await t.inject({ method: 'POST', url: '/api/v1/join', payload: { ...(await import('./helpers.js')).validJoin({ email: 'waiting@example.com', phone: '9000099999' }) } });
+    const o = (await t.inject({ url: '/api/v1/admin/overview', headers: admin })).json();
+    expect(o).toMatchObject({ pending: 1, admins: 1, nextEvent: { people: 2, unpaidPaise: 20000 } });
+  });
+
+  it('shows batch-list stats and finds graduates by roll number or name', async () => {
+    await t.inject({ method: 'POST', url: '/api/v1/admin/batch-list', headers: { ...admin, 'content-type': 'text/csv' },
+      payload: 'roll_no,name,batch,branch,degree\n19PCS011,Kumar Gaurav,2021,Computer Science & Engineering,M.Tech\n08UCE021,Rohit Kumar,2012,Civil Engineering,B.Tech\n' });
+    const all = (await t.inject({ url: '/api/v1/admin/batch-list', headers: admin })).json();
+    expect(all).toMatchObject({ count: 2, minBatch: 2012, maxBatch: 2021, lastUploadedBy: 'admin:Amit Ranjan' });
+    expect((await t.inject({ url: '/api/v1/admin/batch-list?q=gaurav', headers: admin })).json().rows).toEqual([expect.objectContaining({ rollNo: '19PCS011' })]);
+  });
+});
+
+describe('directory summary', () => {
+  it('counts members by work city and home district, and filters by city', async () => {
+    await member({ workDistrict: 'Patna', homeDistrict: 'Saran' });
+    await member({ workDistrict: ' patna ', homeDistrict: 'Saran' });
+    const c = await member({ workDistrict: 'Bengaluru', workState: 'Karnataka', homeDistrict: 'Gaya' });
+    const s = (await c.req('GET', '/api/v1/members/summary')).json();
+    expect(s.total).toBe(3);
+    expect(s.work[0]).toEqual({ place: 'Patna', n: 2 });
+    expect(s.home[0]).toEqual({ place: 'Saran', n: 2 });
+    expect(s.me).toMatchObject({ homeDistrict: 'Gaya' });
+    expect((await c.req('GET', '/api/v1/members?workDistrict=Patna')).json().items).toHaveLength(2);
+  });
+});
+
 describe('member pages', () => {
   it('shows the next event and latest posts on the home page', async () => {
     await makeEvent({ title: 'Chhath get-together' });

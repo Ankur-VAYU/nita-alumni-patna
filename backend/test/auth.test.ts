@@ -216,7 +216,9 @@ describe('member area', () => {
     const home = await t.inject({ url: '/home', headers: { cookie } });
     expect(home.body).toContain('Namaste, Me');
     expect(home.body).toContain('verified alumni');
-    for (const p of ['/alumni', '/me/edit', '/me']) expect((await t.inject({ url: p, headers: { cookie } })).statusCode).toBe(200);
+    for (const p of ['/alumni', '/me']) expect((await t.inject({ url: p, headers: { cookie } })).statusCode).toBe(200);
+    // Editing now happens on My profile itself.
+    expect((await t.inject({ url: '/me/edit', headers: { cookie } })).headers.location).toBe('/me');
     // The join form and admin API are not affected by the member check.
     expect((await t.inject({ method: 'POST', url: '/api/v1/join', payload: validJoin({ email: 'new@example.com' }) })).statusCode).toBe(201);
     expect((await t.inject({ url: '/api/v1/admin/members', headers: admin })).statusCode).toBe(200);

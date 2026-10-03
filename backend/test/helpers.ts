@@ -11,7 +11,7 @@ export async function setup(extra: Partial<Parameters<typeof createHttpApp>[0]> 
   const { db, pool } = createDb(TEST_DATABASE_URL);
   await runMigrations(pool);
   const app = createHttpApp({ adminKey: ADMIN_KEY, rateLimit: false, openDb: async () => ({ db, release: async () => {} }), ...extra });
-  const reset = () => db.execute(sql`TRUNCATE members, batch_records, audit_log, events, event_rsvps, posts, post_interests, post_reports RESTART IDENTITY CASCADE`);
+  const reset = () => db.execute(sql`TRUNCATE members, batch_records, audit_log, events, event_rsvps, posts, post_interests, post_reports, announcements RESTART IDENTITY CASCADE`);
   const close = () => pool.end();
   return { app, db, pool, reset, close, inject: (o: InjectOptions | string) => inject(app, o) };
 }
