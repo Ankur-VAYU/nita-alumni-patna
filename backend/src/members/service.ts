@@ -82,6 +82,8 @@ function fieldsToRow(f: MemberFields): Omit<NewMember, 'source'> {
 function duplicateError(constraint: string) {
   if (constraint === 'members_phone_key')
     return conflict('This mobile number is already registered. If this is you, contact a chapter admin.', 'DUPLICATE_PHONE');
+  if (constraint === 'members_email_key')
+    return conflict('This email is already registered. If this is you, contact a chapter admin.', 'DUPLICATE_EMAIL');
   if (constraint === 'members_roll_no_key')
     return conflict('This roll number is already registered. If this is you, contact a chapter admin.', 'DUPLICATE_ROLL');
   return conflict('This member already exists.');
@@ -442,4 +444,32 @@ export async function exportMembersCsv(db: Db, status?: Member['status']) {
     })),
     { header: true, columns: EXPORT_COLUMNS.map(([, h]) => h), bom: true },
   );
+}
+
+/* ---------- sign-in ---------- */
+
+export interface SessionMember {
+  id: string;
+  name: string;
+  email: string | null;
+  role: Member['role'];
+  status: Member['status'];
+}
+
+const SESSION_COLUMNS = { id: members.id, name: members.name, email: members.email, role: members.role, status: members.status };
+
+/** The member who owns this email address (stored lower-case), if any. */
+export async function findMemberByEmail(db: Db, email: string): Promise<SessionMember | null> {
+  const [m] = await db.select(SESSION_COLUMNS).from(members).where(eq(members.email, email.trim().toLowerCase()));
+  return m ?? null;
+}
+
+export async function getSessionMember(db: Db, id: string): Promise<SessionMember | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const [m] = await db.select(SESSION_COLUMNS).from(members).where(eq(members.id, id));
+  return m ?? null;
+}
+
+export async function recordSignIn(db: Db, m: SessionMember, method: string) {
+  await audit(db, `member:${m.name}`, 'member.signed_in', m.id, { method, role: m.role });
 }

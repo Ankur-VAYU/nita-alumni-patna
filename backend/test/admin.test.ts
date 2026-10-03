@@ -78,7 +78,7 @@ describe('creating accounts from the backend', () => {
 describe('reviewing registrations', () => {
   it('approves, rejects with a reason, and manages roles', async () => {
     const a = (await t.inject({ method: 'POST', url: '/api/v1/join', payload: validJoin({ proof: { name: 'degree.pdf', data: PDF } }) })).json();
-    const b = (await t.inject({ method: 'POST', url: '/api/v1/join', payload: validJoin({ phone: '8102349076', rollNo: '19UEI027', name: 'Ritika Raj' }) })).json();
+    const b = (await t.inject({ method: 'POST', url: '/api/v1/join', payload: validJoin({ phone: '8102349076', rollNo: '19UEI027', name: 'Ritika Raj', email: 'ritika@example.com' }) })).json();
 
     expect((await t.inject({ url: '/api/v1/admin/members?status=pending', headers: admin })).json()).toHaveLength(2);
 

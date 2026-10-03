@@ -20,6 +20,8 @@ p { margin: 0; }
 .eyebrow { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); margin-bottom: 8px; }
 .hero h1 { font-size: 2.2rem; margin-bottom: 10px; }
 .lead { opacity: 0.9; max-width: 56ch; }
+.lead.small { font-size: 0.92rem; margin-top: 8px; }
+.lead a { color: var(--gold); font-weight: 600; }
 main { max-width: 760px; margin: -48px auto 0; padding: 0 16px 48px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 28px; box-shadow: 0 10px 28px -16px rgb(15 26 58 / 0.25); }
 form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }

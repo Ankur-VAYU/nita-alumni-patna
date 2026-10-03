@@ -29,6 +29,11 @@ const yesNo = z.union([
 
 const thisYear = () => new Date().getFullYear();
 
+const emailField = z.preprocess(
+  (v) => (typeof v === 'string' ? v.trim().toLowerCase() : v),
+  z.email('Enter a valid email address').max(254),
+);
+
 /** Profile fields shared by the join form, admin creation and CSV import. */
 export const memberFields = z.object({
   name: z.string().trim().min(2, 'Enter the full name').max(120),
@@ -40,7 +45,8 @@ export const memberFields = z.object({
     }
     return p;
   }),
-  email: optional(z.email('Enter a valid email address').max(254)),
+  // Lower-cased: members sign in with Google using this address.
+  email: optional(emailField),
   rollNo: optional(
     z.string().trim().toUpperCase().max(32).regex(/^[A-Z0-9/-]+$/, 'Use only letters, digits, / and -'),
   ),
@@ -96,6 +102,7 @@ const dataUrlFile = (allowed: FileType[], maxBytes: number, label: string) =>
 
 /** The public join form. Stricter than import: work details and consent are required. */
 export const joinInput = memberFields.extend({
+  email: z.preprocess(blankToUndefined, emailField.optional()).refine((v) => !!v, 'Enter your email. You will use it to sign in with Google'),
   position: z.string().trim().min(2, 'Enter your current position').max(120),
   organisation: z.string().trim().min(2, 'Enter your current organisation').max(160),
   workDistrict: z.string().trim().min(2, 'Enter the city or district where you work').max(80),

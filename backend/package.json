@@ -17,7 +17,10 @@
     "dev:worker": "wrangler dev",
     "deploy": "wrangler deploy",
     "set-db": "node scripts/set-database-url.mjs",
-    "show-env": "node scripts/show-env.mjs"
+    "show-env": "node scripts/show-env.mjs",
+    "gen:migrations": "node scripts/gen-migrations.mjs",
+    "prebuild": "node scripts/gen-migrations.mjs",
+    "predeploy": "node scripts/gen-migrations.mjs"
   },
   "engines": {
     "node": "22.x"

@@ -30,5 +30,5 @@ code shown on screen, or a new number to go through registration.
 
 ## Status
 
-- **Built:** the join form and member database, batch-list matching, and admin tools to create, import, approve and export accounts (`backend/`).
-- **Next:** member sign-in with OTP and the app screens from the prototype (directory, events and payments, board, admin screens), then WhatsApp/email delivery and the Play Store app. See section 6 of [`PRODUCT.md`](PRODUCT.md).
+- **Built:** the join form and member database, batch-list matching, **Sign in with Google** for members and admins, **admin pages** (`/admin`) to review registrations, add and import members, set roles, export and see the activity log, and a member profile page (`/me`).
+- **Next:** profile editing and the alumni directory, then events and payments and the jobs & help board from the prototype, then WhatsApp/email delivery and the Play Store app. See section 6 of [`PRODUCT.md`](PRODUCT.md).

@@ -20,7 +20,15 @@ await runMigrations(pool, (m) => console.log(m));
 
 const app = new Hono();
 app.use('/*', serveStatic({ root: './public' }));
-app.route('/', createHttpApp({ adminKey: config.ADMIN_API_KEY, openDb: async () => ({ db, release: async () => {} }) }));
+app.route(
+  '/',
+  createHttpApp({
+    adminKey: config.ADMIN_API_KEY,
+    google: config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET ? { clientId: config.GOOGLE_CLIENT_ID, clientSecret: config.GOOGLE_CLIENT_SECRET } : undefined,
+    sessionSecret: config.SESSION_SECRET,
+    openDb: async () => ({ db, release: async () => {} }),
+  }),
+);
 
 const server = serve({ fetch: app.fetch, port: config.PORT, hostname: config.HOST }, (info) =>
   console.log(`Server listening on http://${info.address}:${info.port}`),

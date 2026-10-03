@@ -7,10 +7,10 @@ export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? 'postgres://po
 export const ADMIN_KEY = 'test-admin-key-test-admin-key-1234567890';
 export const admin = { 'x-admin-key': ADMIN_KEY, 'x-admin-name': 'Amit Ranjan' };
 
-export async function setup() {
+export async function setup(extra: Partial<Parameters<typeof createHttpApp>[0]> = {}) {
   const { db, pool } = createDb(TEST_DATABASE_URL);
   await runMigrations(pool);
-  const app = createHttpApp({ adminKey: ADMIN_KEY, rateLimit: false, openDb: async () => ({ db, release: async () => {} }) });
+  const app = createHttpApp({ adminKey: ADMIN_KEY, rateLimit: false, openDb: async () => ({ db, release: async () => {} }), ...extra });
   const reset = () => db.execute(sql`TRUNCATE members, batch_records, audit_log RESTART IDENTITY`);
   const close = () => pool.end();
   return { app, db, pool, reset, close, inject: (o: InjectOptions | string) => inject(app, o) };
@@ -36,6 +36,7 @@ export async function inject(app: ReturnType<typeof createHttpApp>, o: InjectOpt
   const res = await app.request(`http://localhost${opts.url}`, { method: opts.method ?? 'GET', headers, body });
   const text = await res.text();
   return {
+    cookies: res.headers.getSetCookie(),
     statusCode: res.status,
     headers: Object.fromEntries(res.headers.entries()),
     body: text,

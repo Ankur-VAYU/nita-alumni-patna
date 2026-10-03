@@ -21,6 +21,7 @@ export default `<!doctype html>
       <p class="eyebrow">NIT Agartala alumni · Patna Chapter</p>
       <h1>Join the chapter</h1>
       <p class="lead">For NIT Agartala alumni whose home is in Bihar, wherever they work now. The committee checks every registration against the institute's batch list before adding you to the directory.</p>
+      <p class="lead small">Already a member? <a href="/login">Sign in</a></p>
     </div>
   </div>
 </header>
@@ -33,7 +34,7 @@ export default `<!doctype html>
       <legend>About you</legend>
       <div class="field full"><label for="name">Full name (as on degree)</label><input id="name" name="name" autocomplete="name" required maxlength="120"><small class="err" data-for="name"></small></div>
       <div class="field"><label for="phone">Mobile number (WhatsApp)</label><input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel" required placeholder="10-digit number"><small class="hint">You will sign in to the app with this number.</small><small class="err" data-for="phone"></small></div>
-      <div class="field"><label for="email">Email <span class="opt">(optional)</span></label><input id="email" name="email" type="email" autocomplete="email"><small class="err" data-for="email"></small></div>
+      <div class="field"><label for="email">Email (Google account)</label><input id="email" name="email" type="email" autocomplete="email" required><small class="hint">You will sign in with Google using this address.</small><small class="err" data-for="email"></small></div>
     </fieldset>
 
     <fieldset>

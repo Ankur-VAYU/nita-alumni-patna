@@ -8,6 +8,11 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   // Shared key for the admin API until admin sign-in is built. Keep it secret.
   ADMIN_API_KEY: z.string().min(32, 'ADMIN_API_KEY must be at least 32 characters'),
+  // Sign in with Google (optional). Without these, only the admin key can sign in.
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  // Signs session cookies. Optional: derived from ADMIN_API_KEY when not set.
+  SESSION_SECRET: z.string().min(32).optional(),
   // Set to true when running behind a reverse proxy or load balancer (most hosts).
 });
 

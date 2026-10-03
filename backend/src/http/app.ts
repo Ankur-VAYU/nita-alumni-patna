@@ -1,17 +1,20 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context } from 'hono';
+import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
 import { secureHeaders } from 'hono/secure-headers';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/index.js';
-import { AppError, badRequest, unauthorized } from '../lib/errors.js';
-import { BIHAR_DISTRICTS, BRANCHES, DEGREES, FIRST_BATCH_YEAR, WORK_STATES } from '../lib/reference.js';
+import { authorizationUrl, exchangeCode, randomToken, type GoogleConfig } from '../auth/google.js';
+import { AppError, badRequest, forbidden, unauthorized } from '../lib/errors.js';
+import { BIHAR_DISTRICTS, BRANCHES, DEGREES, FIRST_BATCH_YEAR, TITLES, WORK_STATES } from '../lib/reference.js';
 import { adminCreateInput, fieldErrors, joinInput, rejectInput, roleInput } from '../members/schemas.js';
 import {
   approveMember, createByAdmin, exportMembersCsv, getFile, getMember, importBatchList, importMembers,
-  listAudit, listMembers, registerFromForm, rejectMember, setRole, setStatus,
+  findMemberByEmail, getSessionMember, listAudit, listMembers, recordSignIn, registerFromForm, rejectMember, setRole, setStatus,
 } from '../members/service.js';
+import { adminPage, loginPage, mePage } from './pages.js';
 import joinTemplate from './join-template.js';
 
 export interface DbSession {
@@ -24,9 +27,34 @@ export interface HttpOptions {
   /** Opens a database connection for one request. */
   openDb: () => Promise<DbSession>;
   rateLimit?: boolean;
+  /** Google OAuth client. Without it, only the admin key can sign in. */
+  google?: GoogleConfig;
+  /** Secret for signing session cookies. Defaults to one derived from the admin key. */
+  sessionSecret?: string;
+  /** For tests: replaces the call to Google's token endpoint. */
+  fetch?: typeof fetch;
 }
 
-type Env = { Variables: { db: Db } };
+/** Who is making the request: a signed-in member, a session opened with the admin key, or the x-admin-key header. */
+export interface Actor {
+  kind: 'member' | 'key-session' | 'key-header';
+  id?: string;
+  name: string;
+  role: 'admin' | 'moderator' | 'member';
+  /** How the actor appears in the activity log. */
+  label: string;
+}
+
+type Env = { Variables: { db: Db; actor: Actor } };
+
+const SESSION_COOKIE = 'nita_session';
+const OAUTH_COOKIE = 'nita_oauth';
+const MEMBER_SESSION_DAYS = 30;
+const KEY_SESSION_HOURS = 12;
+// Non-GET admin requests made with the session cookie must carry this header. Browsers cannot
+// add it to cross-site requests without a CORS preflight, which this app never allows.
+const CSRF_HEADER = 'x-requested-with';
+const CSRF_VALUE = 'nita-admin';
 
 // The join form posts photo (≤300 KB) + proof (≤500 KB) as base64 JSON, about 1.1 MB at most.
 const JOIN_BODY_LIMIT = 1.2 * 1024 * 1024;
@@ -112,11 +140,10 @@ const importQuery = z.object({
   status: z.enum(['pending', 'verified']).default('verified'),
 });
 
-/** Who did it, for the audit log. Admin sign-in will replace this header later. */
-const actorOf = (c: Context) => {
-  const name = (c.req.header('x-admin-name') ?? '').replace(/[^\p{L}\p{N} .'-]/gu, '').trim().slice(0, 60);
-  return name ? `admin:${name}` : 'admin-api';
-};
+/** Who did it, for the activity log. */
+const actorOf = (c: Context<Env>) => c.var.actor.label;
+
+const isStaff = (role: string) => role === 'admin' || role === 'moderator';
 
 export function createHttpApp(opts: HttpOptions) {
   const app = new Hono<Env>();
@@ -124,6 +151,15 @@ export function createHttpApp(opts: HttpOptions) {
   const adminFailLimit = limiter(20, 10 * 60 * 1000);
   const page = renderJoinPage();
   const adminDigest = opts.adminKey && opts.adminKey.length >= 32 ? createHash('sha256').update(opts.adminKey).digest() : null;
+  const keyMatches = (given: string) => !!adminDigest && !!given && timingSafeEqual(createHash('sha256').update(given).digest(), adminDigest);
+  const sessionSecret =
+    opts.sessionSecret && opts.sessionSecret.length >= 32
+      ? opts.sessionSecret
+      : opts.adminKey && opts.adminKey.length >= 32
+        ? createHash('sha256').update(`nita-session:${opts.adminKey}`).digest('hex')
+        : null;
+  const google = opts.google?.clientId && opts.google?.clientSecret ? opts.google : undefined;
+  const signInLimit = limiter(30, 10 * 60 * 1000);
 
   app.use(secureHeaders());
 
@@ -162,7 +198,7 @@ export function createHttpApp(opts: HttpOptions) {
   });
 
   app.get('/api/v1/reference', (c) =>
-    c.json({ degrees: DEGREES, branches: BRANCHES, homeDistricts: BIHAR_DISTRICTS, workStates: WORK_STATES, firstBatchYear: FIRST_BATCH_YEAR }),
+    c.json({ degrees: DEGREES, branches: BRANCHES, homeDistricts: BIHAR_DISTRICTS, workStates: WORK_STATES, titles: TITLES, firstBatchYear: FIRST_BATCH_YEAR }),
   );
 
   app.post('/api/v1/join', async (c, next) => {
@@ -175,20 +211,157 @@ export function createHttpApp(opts: HttpOptions) {
     return c.json({ id: m.id, name: m.name, status: m.status }, 201);
   });
 
+  /* ---------- sign-in and sessions ---------- */
+
+  const secureCookie = (c: Context) => new URL(c.req.url).protocol === 'https:';
+  const origin = (c: Context) => new URL(c.req.url).origin;
+
+  async function startSession(c: Context, sub: string, maxAgeSeconds: number) {
+    if (!sessionSecret) throw new AppError(503, 'NOT_CONFIGURED', 'Sign-in is not configured on the server.');
+    const value = JSON.stringify({ s: sub, e: Date.now() + maxAgeSeconds * 1000 });
+    await setSignedCookie(c, SESSION_COOKIE, value, sessionSecret, {
+      path: '/', httpOnly: true, secure: secureCookie(c), sameSite: 'Lax', maxAge: maxAgeSeconds,
+    });
+  }
+
+  /** The signed-in person, re-checked against the database on every request. */
+  async function currentActor(c: Context<Env>): Promise<Actor | null> {
+    if (!sessionSecret) return null;
+    const raw = await getSignedCookie(c, sessionSecret, SESSION_COOKIE);
+    if (!raw) return null;
+    let payload: { s?: string; e?: number };
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+    if (!payload.s || !payload.e || payload.e < Date.now()) return null;
+    if (payload.s === 'key') return { kind: 'key-session', name: 'Admin key', role: 'admin', label: 'admin-key' };
+    const m = await getSessionMember(c.var.db, payload.s);
+    if (!m || m.status !== 'verified') return null;
+    return { kind: 'member', id: m.id, name: m.name, role: m.role, label: `member:${m.name}` };
+  }
+
+  const toLogin = (c: Context, code: string, extra: Record<string, string> = {}) =>
+    c.redirect(`/login?${new URLSearchParams({ m: code, ...extra }).toString()}`);
+
+  const pageHeaders = (c: Context) => {
+    c.header('content-security-policy', FORM_CSP);
+    c.header('cache-control', 'no-store');
+  };
+
+  app.get('/login', (c) => {
+    pageHeaders(c);
+    return c.html(loginPage(c.req.query('m'), c.req.query('email'), !!google));
+  });
+
+  app.get('/auth/google', async (c) => {
+    if (!google || !sessionSecret) return toLogin(c, 'google_off');
+    const state = randomToken();
+    const verifier = randomToken(48);
+    await setSignedCookie(c, OAUTH_COOKIE, JSON.stringify({ state, verifier, e: Date.now() + 10 * 60 * 1000 }), sessionSecret, {
+      path: '/auth', httpOnly: true, secure: secureCookie(c), sameSite: 'Lax', maxAge: 600,
+    });
+    return c.redirect(authorizationUrl(google, `${origin(c)}/auth/google/callback`, state, verifier));
+  });
+
+  app.get('/auth/google/callback', withDb, async (c) => {
+    if (!google || !sessionSecret) return toLogin(c, 'google_off');
+    if (opts.rateLimit !== false && !signInLimit(clientIp(c))) return toLogin(c, 'limited');
+    const raw = await getSignedCookie(c, sessionSecret, OAUTH_COOKIE);
+    deleteCookie(c, OAUTH_COOKIE, { path: '/auth' });
+    if (c.req.query('error')) return toLogin(c, 'cancelled');
+    let saved: { state?: string; verifier?: string; e?: number } = {};
+    try {
+      saved = raw ? JSON.parse(raw) : {};
+    } catch {
+      saved = {};
+    }
+    const code = c.req.query('code');
+    if (!code || !saved.state || !saved.verifier || saved.state !== c.req.query('state') || !saved.e || saved.e < Date.now()) {
+      return toLogin(c, 'state');
+    }
+    let identity;
+    try {
+      identity = await exchangeCode(google, code, `${origin(c)}/auth/google/callback`, saved.verifier, opts.fetch);
+    } catch (err) {
+      console.error('Google sign-in failed:', (err as Error).message);
+      return toLogin(c, 'google');
+    }
+    const m = await findMemberByEmail(c.var.db, identity.email);
+    if (!m) return toLogin(c, 'not_member', { email: identity.email });
+    if (m.status !== 'verified') return toLogin(c, m.status);
+    await startSession(c, m.id, MEMBER_SESSION_DAYS * 24 * 3600);
+    await recordSignIn(c.var.db, m, 'google');
+    return c.redirect(isStaff(m.role) ? '/admin' : '/me');
+  });
+
+  app.post('/auth/key', async (c) => {
+    if (opts.rateLimit !== false && !signInLimit(clientIp(c))) return toLogin(c, 'limited');
+    const form = await c.req.parseBody();
+    const given = typeof form.key === 'string' ? form.key.trim() : '';
+    if (!sessionSecret || !keyMatches(given)) return toLogin(c, 'key');
+    await startSession(c, 'key', KEY_SESSION_HOURS * 3600);
+    return c.redirect('/admin');
+  });
+
+  app.get('/logout', (c) => {
+    deleteCookie(c, SESSION_COOKIE, { path: '/' });
+    return toLogin(c, 'signed_out');
+  });
+
+  app.get('/me', withDb, async (c) => {
+    const who = await currentActor(c);
+    if (!who) return toLogin(c, 'need');
+    if (who.kind !== 'member' || !who.id) return c.redirect('/admin');
+    pageHeaders(c);
+    return c.html(mePage(await getMember(c.var.db, who.id), who));
+  });
+
+  app.get('/admin', withDb, async (c) => {
+    const who = await currentActor(c);
+    if (!who) return toLogin(c, 'need');
+    if (!isStaff(who.role)) return c.redirect('/me');
+    pageHeaders(c);
+    return c.html(adminPage(who));
+  });
+
+  app.get('/api/v1/me', withDb, async (c) => {
+    const who = await currentActor(c);
+    if (!who) throw unauthorized('Not signed in');
+    return c.json({ name: who.name, role: who.role, kind: who.kind, id: who.id ?? null });
+  });
+
   /* ---------- admin ---------- */
 
   const admin = new Hono<Env>();
+  admin.use(withDb);
   admin.use(async (c, next) => {
-    if (!adminDigest) throw new AppError(503, 'NOT_CONFIGURED', 'The admin key is not set on the server (ADMIN_API_KEY, at least 32 characters).');
-    const given = c.req.header('authorization')?.replace(/^Bearer\s+/i, '') ?? c.req.header('x-admin-key') ?? '';
-    if (!given || !timingSafeEqual(createHash('sha256').update(given).digest(), adminDigest)) {
-      if (opts.rateLimit !== false && !adminFailLimit(clientIp(c)))
-        throw new AppError(429, 'RATE_LIMITED', 'Too many failed attempts. Try again later.');
-      throw unauthorized('A valid admin key is required');
+    // 1) Tools and scripts: the admin key in a header.
+    const headerKey = c.req.header('authorization')?.replace(/^Bearer\s+/i, '') ?? c.req.header('x-admin-key');
+    if (headerKey !== undefined) {
+      if (!adminDigest) throw new AppError(503, 'NOT_CONFIGURED', 'The admin key is not set on the server (ADMIN_API_KEY, at least 32 characters).');
+      if (!keyMatches(headerKey)) {
+        if (opts.rateLimit !== false && !adminFailLimit(clientIp(c))) throw new AppError(429, 'RATE_LIMITED', 'Too many failed attempts. Try again later.');
+        throw unauthorized('A valid admin key is required');
+      }
+      const name = (c.req.header('x-admin-name') ?? '').replace(/[^\p{L}\p{N} .'-]/gu, '').trim().slice(0, 60);
+      c.set('actor', { kind: 'key-header', name: name || 'Admin key', role: 'admin', label: name ? `admin:${name}` : 'admin-api' });
+      return next();
     }
+    // 2) The admin pages: a signed-in admin or moderator.
+    const who = await currentActor(c);
+    if (!who) throw unauthorized('Please sign in again');
+    if (!isStaff(who.role)) throw forbidden('Only chapter admins and moderators can do this');
+    if (c.req.method !== 'GET' && c.req.header(CSRF_HEADER) !== CSRF_VALUE) throw forbidden('Missing request header');
+    c.set('actor', who);
     await next();
   });
-  admin.use(withDb);
+  /** Moderators may review registrations; everything else needs an admin. */
+  const adminOnly = createMiddleware<Env>(async (c, next) => {
+    if (c.var.actor.role !== 'admin') throw forbidden('Only chapter admins can do this');
+    await next();
+  });
 
   const csvBody = async (c: Context) => {
     const text = await readBody(c, CSV_BODY_LIMIT);
@@ -198,14 +371,14 @@ export function createHttpApp(opts: HttpOptions) {
   const id = (c: Context) => c.req.param('id') ?? '';
 
   admin.get('/members', async (c) => c.json(await listMembers(c.var.db, parse(listQuery, c.req.query()))));
-  admin.get('/members.csv', async (c) => {
+  admin.get('/members.csv', adminOnly, async (c) => {
     const { status } = parse(listQuery, c.req.query());
     const csv = await exportMembersCsv(c.var.db, status);
     c.header('content-disposition', `attachment; filename="members${status ? '-' + status : ''}.csv"`);
     return c.body(csv, 200, { 'content-type': 'text/csv; charset=utf-8' });
   });
-  admin.post('/members', async (c) => c.json(await createByAdmin(c.var.db, parse(adminCreateInput, await readJson(c)), actorOf(c)), 201));
-  admin.post('/members/import', async (c) => {
+  admin.post('/members', adminOnly, async (c) => c.json(await createByAdmin(c.var.db, parse(adminCreateInput, await readJson(c)), actorOf(c)), 201));
+  admin.post('/members/import', adminOnly, async (c) => {
     const q = parse(importQuery, c.req.query());
     return c.json(await importMembers(c.var.db, await csvBody(c), { ...q, actor: actorOf(c) }));
   });
@@ -218,13 +391,13 @@ export function createHttpApp(opts: HttpOptions) {
   }
   admin.post('/members/:id/approve', async (c) => c.json(await approveMember(c.var.db, id(c), actorOf(c))));
   admin.post('/members/:id/reject', async (c) => c.json(await rejectMember(c.var.db, id(c), parse(rejectInput, await readJson(c)).reason, actorOf(c))));
-  admin.post('/members/:id/suspend', async (c) => c.json(await setStatus(c.var.db, id(c), 'suspended', actorOf(c))));
-  admin.post('/members/:id/reinstate', async (c) => c.json(await setStatus(c.var.db, id(c), 'verified', actorOf(c))));
-  admin.post('/members/:id/role', async (c) => {
+  admin.post('/members/:id/suspend', adminOnly, async (c) => c.json(await setStatus(c.var.db, id(c), 'suspended', actorOf(c))));
+  admin.post('/members/:id/reinstate', adminOnly, async (c) => c.json(await setStatus(c.var.db, id(c), 'verified', actorOf(c))));
+  admin.post('/members/:id/role', adminOnly, async (c) => {
     const { role, title } = parse(roleInput, await readJson(c));
     return c.json(await setRole(c.var.db, id(c), role, title, actorOf(c)));
   });
-  admin.post('/batch-list', async (c) => c.json(await importBatchList(c.var.db, await csvBody(c), actorOf(c))));
+  admin.post('/batch-list', adminOnly, async (c) => c.json(await importBatchList(c.var.db, await csvBody(c), actorOf(c))));
   admin.get('/audit', async (c) =>
     c.json(await listAudit(c.var.db, parse(z.object({ limit: z.coerce.number().int().min(1).max(500).optional() }), c.req.query()).limit)),
   );

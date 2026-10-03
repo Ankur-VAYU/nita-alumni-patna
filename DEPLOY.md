@@ -70,21 +70,17 @@ npm install
    own pooling. It looks like
    `postgresql://neondb_owner:<password>@ep-<name>.<region>.aws.neon.tech/neondb?sslmode=require`.
 
-### Step 2: Create the tables (from your computer)
-```bash
-cp .env.example .env
-# In .env set:
-#   DATABASE_URL=<the direct connection string from step 1>
-#   ADMIN_API_KEY=<a long random secret: openssl rand -hex 32>
-npm run cli -- migrate
-```
-You should see `Applied 0001_init.sql`, `Applied 0002_row_level_security.sql`, `Database is up to date.`
-I could not test against Neon from where this was built. If this step fails, send me the exact error.
+### Step 2: Database tables (automatic)
+The app creates and updates its tables by itself the first time it starts on Cloudflare, so there
+is nothing to run. Admins who use the command line can still run `npm run cli -- migrate` with
+`DATABASE_URL` in `backend/.env`. Easiest way to set that file: `npm run set-db`, then paste the
+connection string when asked (it stays hidden).
 
 ### Step 3: Connect Cloudflare to the database (Hyperdrive)
 ```bash
 npx wrangler login                       # opens the browser to sign in to Cloudflare
 npx wrangler hyperdrive create nita-alumni-db --connection-string="<the direct connection string>"
+# or create it on the Cloudflare website: Storage & databases → Hyperdrive → Connect database
 ```
 Copy the `id` it prints into `backend/wrangler.jsonc`, replacing `REPLACE_WITH_HYPERDRIVE_ID`, then
 commit and push that change. The id is not a secret. The database password is stored inside
@@ -117,7 +113,41 @@ The repository no longer contains Vercel settings. Delete the `nitaalumni` proje
 stops building on every push. If you created a Neon database through Vercel, you can reuse it
 instead of making a new one in step 1, or delete it.
 
+### Step 7: Sign in with Google (one time, about 10 minutes)
+Members and admins sign in with the Google account whose email is in their member profile. The
+menus below are Google's at the time of writing and may be named slightly differently.
+
+1. Open **console.cloud.google.com** and sign in (the chapter's or President's Google account).
+2. Top bar → project picker → **New project** → name `NITA Alumni Patna` → **Create**, and select it.
+3. Menu → **APIs & Services → OAuth consent screen** (may be called **Google Auth Platform**) →
+   **Get started**: app name `NITA Alumni Patna`, your email as support email, audience
+   **External**, your email as contact → **Create**.
+4. **Clients → Create client**: application type **Web application**, name `nitaalumni`.
+   - Authorised JavaScript origins: `https://nitaalumni.<subdomain>.workers.dev`
+   - Authorised redirect URIs: `https://nitaalumni.<subdomain>.workers.dev/auth/google/callback`
+   - **Create**. Google shows a **Client ID** and a **Client secret**. Keep this window open.
+5. **Audience → Publish app** (status **In production**). Sign-in only asks for name and email, which
+   does not need Google's review. While it says **Testing**, only the test users you list can sign in.
+6. In the terminal, in `backend`, store both values in Cloudflare (paste each when asked):
+   ```bash
+   npx wrangler secret put GOOGLE_CLIENT_ID
+   npx wrangler secret put GOOGLE_CLIENT_SECRET
+   ```
+   Secrets take effect immediately; no redeploy needed.
+
+### Step 8: First admin
+1. Open `https://nitaalumni.<subdomain>.workers.dev/login` → **Chapter admin: sign in with the admin
+   key** → paste the admin key (from `~/nita-admin-key.txt`).
+2. **Admin → Add member**: the President's details, with their Google email, role **admin** and
+   title **President** → **Create verified account**.
+3. **Sign out**, then **Sign in with Google** with that email. From now on use Google; keep the admin
+   key for emergencies only.
+
 ## 4. Creating accounts from the backend
+
+The easiest way is the **admin pages** at `/admin` (after signing in): **Add member** for one person,
+**Import & export** for a spreadsheet. The command line and API below do the same.
+
 
 Admin commands run **from an admin's own computer** and connect straight to Neon using
 `DATABASE_URL` in `backend/.env`. That file holds the key to all member data: keep it only on
@@ -204,7 +234,7 @@ a new empty database: `gunzip -c backups/<file>.sql.gz | psql "<new database URL
 
 ## 8. Known limits of this first version
 
-- Admins share one key instead of having their own sign-in. Personal admin sign-in with OTP comes with the member app.
+- Sign-in is with Google only. Members without a Google account (or whose profile has no email) cannot sign in yet; an admin can add the email in the admin pages.
 - No WhatsApp or email messages yet; applicants are not told automatically when they are approved.
 - Proof documents are limited to 500 KB to stay within the free plan's CPU limit.
 
