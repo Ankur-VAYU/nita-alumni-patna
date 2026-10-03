@@ -20,10 +20,10 @@ ${opts.script ? `<script src="/common.js" defer></script><script src="${opts.scr
 <body>
 <header class="bar">
   <a class="brand" href="${u ? '/home' : '/join'}"><img src="/emblem.svg" alt="" width="36" height="36"><span><b>NITA Alumni</b><small>Patna Chapter</small></span></a>
-  ${u ? `<nav class="who"><a href="/home">Home</a><a href="/alumni">Alumni</a><a href="/me">My profile</a>${u.role === 'admin' || u.role === 'moderator' ? '<a href="/admin">Admin</a>' : ''}<a href="/logout">Sign out</a><span class="me">${esc(u.name)}${u.role !== 'member' ? ` <em class="pill">${esc(u.role)}</em>` : ''}</span></nav>` : ''}
+  ${u ? `<nav class="who"><a href="/home">Home</a><a href="/alumni">Alumni</a><a href="/events">Events</a><a href="/board">Jobs &amp; Help</a><a href="/me">My profile</a>${u.role === 'admin' || u.role === 'moderator' ? '<a href="/admin">Admin</a>' : ''}<a href="/logout">Sign out</a><span class="me">${esc(u.name)}${u.role !== 'member' ? ` <em class="pill">${esc(u.role)}</em>` : ''}</span></nav>` : ''}
 </header>
 <main class="page">${body}</main>
-<footer class="foot"><a href="/privacy">Privacy notice</a> · <a href="/join">Join</a> · <a href="/login">Sign in</a></footer>
+<footer class="foot"><a href="/privacy">Privacy notice</a>${u ? '' : ' · <a href="/join">Join</a> · <a href="/login">Sign in</a>'}</footer>
 </body>
 </html>`;
 }
@@ -148,7 +148,15 @@ export function privacyPage(contactEmail: string | undefined) {
 
 export interface Stats { members: number; inBihar: number; outsideBihar: number; mentors: number; homeDistricts: number }
 
-export function homePage(user: { name: string; role: string }, stats: Stats, missing: string[]) {
+const POST_LABEL: Record<string, string> = { job: 'Vacancy', referral: 'Referral', help: 'Help needed', offer: 'Offering help', mentor: 'Mentorship' };
+const fmtIST = (d: Date) => d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+interface Highlights {
+  nextEvent: { id: string; title: string; startsAt: Date; venue: string; feePaise: number; feeBasis: string; capacity: number | null; people: number } | null;
+  latestPosts: { id: string; type: string; title: string; district: string; state: string; authorName: string }[];
+}
+
+export function homePage(user: { name: string; role: string }, stats: Stats, missing: string[], hl: Highlights) {
   const first = user.name.split(/\s+/)[0];
   return layout('Home', `
 <section class="hero-band">
@@ -170,7 +178,19 @@ ${missing.length ? `<section class="card"><p class="note warn">Your profile is m
   <a class="card tile" href="/alumni"><h2>Alumni directory</h2><p class="muted">Find batchmates by name, branch, batch, home district or where they work.</p></a>
   <a class="card tile" href="/me"><h2>My profile</h2><p class="muted">Your details, photo, and who can see your phone and email.</p></a>
   ${user.role === 'admin' || user.role === 'moderator' ? '<a class="card tile" href="/admin"><h2>Admin</h2><p class="muted">Review registrations and manage members.</p></a>' : ''}
-  <div class="card tile soon"><h2>Events &amp; Jobs board</h2><p class="muted">Chapter meets with RSVP, and vacancies and help from fellow alumni. Coming soon.</p></div>
+</section>
+<section class="tiles two">
+  <div class="card">
+    <p class="eyebrow-ink">Next event</p>
+    ${hl.nextEvent ? `<h2>${esc(hl.nextEvent.title)}</h2><p class="muted">${esc(fmtIST(hl.nextEvent.startsAt))} · ${esc(hl.nextEvent.venue)}</p>
+    <p class="muted small">${hl.nextEvent.people} going${hl.nextEvent.capacity ? ` of ${hl.nextEvent.capacity} places` : ''} · ${hl.nextEvent.feePaise ? `₹${(hl.nextEvent.feePaise / 100).toLocaleString('en-IN')} per ${hl.nextEvent.feeBasis}` : 'Free'}</p>
+    <p><a class="btn" href="/events">RSVP</a></p>` : '<p class="muted">No upcoming events yet.</p><p><a class="btn ghost" href="/events">See events</a></p>'}
+  </div>
+  <div class="card">
+    <p class="eyebrow-ink">Latest on the Jobs &amp; Help board</p>
+    ${hl.latestPosts.length ? `<ul class="plain">${hl.latestPosts.map((p) => `<li><span class="tag ${esc(p.type)}">${esc(POST_LABEL[p.type] ?? p.type)}</span> ${esc(p.title)} <span class="muted small">· ${esc(p.district)}, ${esc(p.state)} · ${esc(p.authorName)}</span></li>`).join('')}</ul>` : '<p class="muted">Nothing posted yet. Share a vacancy or ask for help.</p>'}
+    <p><a class="btn ghost" href="/board">Open the board</a></p>
+  </div>
 </section>`, { user });
 }
 
@@ -180,4 +200,12 @@ export function alumniPage(user: { name: string; role: string }) {
 
 export function editProfilePage(user: { name: string; role: string }) {
   return layout('Edit my profile', `<div id="profile-edit"><h1>Edit my profile</h1><p class="muted">Loading…</p></div>`, { user, script: '/profile.js' });
+}
+
+export function eventsPage(user: { name: string; role: string }) {
+  return layout('Events', `<div id="events"><h1>Events</h1><p class="muted">Loading…</p></div>`, { user, script: '/events.js' });
+}
+
+export function boardPage(user: { name: string; role: string }) {
+  return layout('Jobs & Help', `<div id="board"><h1>Jobs &amp; Help</h1><p class="muted">Loading…</p></div>`, { user, script: '/board.js' });
 }

@@ -15,7 +15,12 @@ import {
   chapterStats, findMemberByEmail, getDirectoryPhoto, getSessionMember, listAudit, listDirectory, listMembers, recordSignIn, registerFromForm,
   rejectMember, setRole, setStatus, updateOwnProfile,
 } from '../members/service.js';
-import { adminPage, alumniPage, editProfilePage, homePage, loginPage, mePage, privacyPage } from './pages.js';
+import { adminPage, alumniPage, boardPage, editProfilePage, eventsPage, homePage, loginPage, mePage, privacyPage } from './pages.js';
+import { eventInput, postInput, postListQuery, postStatusInput, reportInput, rsvpInput } from '../community/schemas.js';
+import {
+  attendees, cancelRsvp, createEvent, createPost, dismissReports, eventPayments, homeHighlights, interestedIn, listEvents,
+  listPosts, listReports, recordPayment, removePost, reportPost, rsvp, setEventStatus, setPostStatus, toggleInterest, updateEvent,
+} from '../community/service.js';
 import joinTemplate from './join-template.js';
 
 export interface DbSession {
@@ -337,12 +342,22 @@ export function createHttpApp(opts: HttpOptions) {
       !m.hasPhoto && 'photo', !m.position && 'position', !m.organisation && 'organisation',
       !m.workDistrict && 'work city', !m.linkedin && 'LinkedIn', !m.skills && 'skills',
     ].filter(Boolean) as string[];
-    return c.html(homePage(r.who, await chapterStats(c.var.db), missing));
+    return c.html(homePage(r.who, await chapterStats(c.var.db), missing, await homeHighlights(c.var.db)));
   });
 
   app.get('/alumni', withDb, async (c) => {
     const r = await memberPage(c);
     return r.redirect ?? c.html(alumniPage(r.who));
+  });
+
+  app.get('/events', withDb, async (c) => {
+    const r = await memberPage(c);
+    return r.redirect ?? c.html(eventsPage(r.who));
+  });
+
+  app.get('/board', withDb, async (c) => {
+    const r = await memberPage(c);
+    return r.redirect ?? c.html(boardPage(r.who));
   });
 
   app.get('/me/edit', withDb, async (c) => {
@@ -367,6 +382,24 @@ export function createHttpApp(opts: HttpOptions) {
   });
   app.get('/api/v1/stats', withDb, requireMember, async (c) => c.json(await chapterStats(c.var.db)));
   app.get('/api/v1/me/profile', withDb, requireMember, async (c) => c.json(await getMember(c.var.db, c.var.actor.id!)));
+  const me = (c: Context<Env>) => c.var.actor.id!;
+  const pid = (c: Context<Env>) => c.req.param('id') ?? '';
+
+  app.get('/api/v1/events', withDb, requireMember, async (c) => c.json(await listEvents(c.var.db, me(c))));
+  app.post('/api/v1/events/:id/rsvp', withDb, requireMember, async (c) =>
+    c.json(await rsvp(c.var.db, pid(c), me(c), parse(rsvpInput, await readJson(c)).guests)));
+  app.delete('/api/v1/events/:id/rsvp', withDb, requireMember, async (c) => c.json(await cancelRsvp(c.var.db, pid(c), me(c))));
+  app.get('/api/v1/events/:id/attendees', withDb, requireMember, async (c) => c.json(await attendees(c.var.db, pid(c))));
+
+  app.get('/api/v1/posts', withDb, requireMember, async (c) => c.json(await listPosts(c.var.db, me(c), parse(postListQuery, c.req.query()))));
+  app.post('/api/v1/posts', withDb, requireMember, async (c) => c.json(await createPost(c.var.db, me(c), parse(postInput, await readJson(c))), 201));
+  app.post('/api/v1/posts/:id/status', withDb, requireMember, async (c) =>
+    c.json(await setPostStatus(c.var.db, pid(c), parse(postStatusInput, await readJson(c)).status, { id: me(c), role: c.var.actor.role, label: c.var.actor.label })));
+  app.post('/api/v1/posts/:id/interest', withDb, requireMember, async (c) => c.json(await toggleInterest(c.var.db, pid(c), me(c))));
+  app.get('/api/v1/posts/:id/interested', withDb, requireMember, async (c) => c.json(await interestedIn(c.var.db, pid(c), me(c))));
+  app.post('/api/v1/posts/:id/report', withDb, requireMember, async (c) =>
+    c.json(await reportPost(c.var.db, pid(c), me(c), parse(reportInput, await readJson(c)).reason)));
+
   app.put('/api/v1/me/profile', withDb, requireMember, async (c) => {
     const input = parse(profileUpdateInput, await readJson(c, 600 * 1024));
     return c.json(await updateOwnProfile(c.var.db, c.var.actor.id!, input));
@@ -459,6 +492,18 @@ export function createHttpApp(opts: HttpOptions) {
     const { role, title } = parse(roleInput, await readJson(c));
     return c.json(await setRole(c.var.db, id(c), role, title, actorOf(c)));
   });
+  // Events: admins only. Reported posts: admins and moderators.
+  admin.get('/events', adminOnly, async (c) => c.json(await listEvents(c.var.db, c.var.actor.id ?? '00000000-0000-0000-0000-000000000000')));
+  admin.post('/events', adminOnly, async (c) => c.json(await createEvent(c.var.db, parse(eventInput, await readJson(c)), { id: c.var.actor.id, label: actorOf(c) }), 201));
+  admin.put('/events/:id', adminOnly, async (c) => c.json(await updateEvent(c.var.db, id(c), parse(eventInput, await readJson(c)), actorOf(c))));
+  admin.post('/events/:id/cancel', adminOnly, async (c) => c.json(await setEventStatus(c.var.db, id(c), 'cancelled', actorOf(c))));
+  admin.post('/events/:id/restore', adminOnly, async (c) => c.json(await setEventStatus(c.var.db, id(c), 'published', actorOf(c))));
+  admin.get('/events/:id/payments', adminOnly, async (c) => c.json(await eventPayments(c.var.db, id(c))));
+  admin.post('/events/:id/payments/:memberId', adminOnly, async (c) => c.json(await recordPayment(c.var.db, id(c), c.req.param('memberId'), actorOf(c))));
+  admin.get('/reports', async (c) => c.json(await listReports(c.var.db)));
+  admin.post('/posts/:id/remove', async (c) => c.json(await removePost(c.var.db, id(c), actorOf(c))));
+  admin.post('/posts/:id/dismiss', async (c) => c.json(await dismissReports(c.var.db, id(c), actorOf(c))));
+
   admin.post('/batch-list', adminOnly, async (c) => c.json(await importBatchList(c.var.db, await csvBody(c), actorOf(c))));
   admin.get('/audit', async (c) =>
     c.json(await listAudit(c.var.db, parse(z.object({ limit: z.coerce.number().int().min(1).max(500).optional() }), c.req.query()).limit)),

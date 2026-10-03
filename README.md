@@ -30,5 +30,5 @@ code shown on screen, or a new number to go through registration.
 
 ## Status
 
-- **Built:** the join form and member database, batch-list matching, **Sign in with Google**, members' **home page** (`/home`), **alumni directory** with search and filters (`/alumni`, contact details follow each person's privacy choice), **my profile** with editing and photo (`/me`, `/me/edit`), **admin pages** (`/admin`) and a **privacy notice** (`/privacy`).
-- **Next:** events with RSVP, the jobs & help board, announcements and NIT Agartala updates, then WhatsApp/email delivery and the Play Store app. See section 6 of [`PRODUCT.md`](PRODUCT.md).
+- **Built:** the join form and member database, batch-list matching, **Sign in with Google**, members' **home page** (`/home`), **alumni directory** with search and filters (`/alumni`, contact details follow each person's privacy choice), **my profile** with editing and photo (`/me`, `/me/edit`), **events** with RSVP, guests, places left and contribution (`/events`), the **Jobs & Help board** with filters, interest, filled/closed and reporting (`/board`), **admin pages** (`/admin`: registrations, members, import/export, events & payments, reported posts, activity log) and a **privacy notice** (`/privacy`).
+- **Next:** announcements and NIT Agartala updates, then WhatsApp/email delivery, online payments and the Play Store app. See section 6 of [`PRODUCT.md`](PRODUCT.md).

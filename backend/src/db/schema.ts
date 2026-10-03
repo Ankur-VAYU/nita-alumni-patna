@@ -1,4 +1,4 @@
-import { bigserial, boolean, customType, jsonb, pgEnum, pgTable, smallint, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { bigserial, boolean, customType, integer, jsonb, pgEnum, pgTable, smallint, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
 
@@ -69,3 +69,69 @@ export const auditLog = pgTable('audit_log', {
 
 export type Member = typeof members.$inferSelect;
 export type NewMember = typeof members.$inferInsert;
+
+/* ---------- events and board (migrations/0004_events_and_board.sql) ---------- */
+
+export const feeBasis = pgEnum('fee_basis', ['family', 'person']);
+export const eventStatus = pgEnum('event_status', ['published', 'cancelled']);
+export const postType = pgEnum('post_type', ['job', 'referral', 'help', 'offer', 'mentor']);
+export const postStatus = pgEnum('post_status', ['open', 'filled', 'closed', 'removed']);
+export const reportStatus = pgEnum('report_status', ['open', 'dismissed', 'actioned']);
+
+export const events = pgTable('events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  title: varchar('title', { length: 120 }).notNull(),
+  startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+  endsAt: timestamp('ends_at', { withTimezone: true }),
+  venue: varchar('venue', { length: 200 }).notNull(),
+  description: text('description'),
+  feePaise: integer('fee_paise').notNull().default(0),
+  feeBasis: feeBasis('fee_basis').notNull().default('family'),
+  capacity: integer('capacity'),
+  status: eventStatus('status').notNull().default('published'),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const eventRsvps = pgTable('event_rsvps', {
+  eventId: uuid('event_id').notNull(),
+  memberId: uuid('member_id').notNull(),
+  guests: integer('guests').notNull().default(0),
+  paidPaise: integer('paid_paise').notNull().default(0),
+  paidRecordedBy: varchar('paid_recorded_by', { length: 120 }),
+  paidAt: timestamp('paid_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const posts = pgTable('posts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  type: postType('type').notNull(),
+  title: varchar('title', { length: 120 }).notNull(),
+  body: text('body').notNull(),
+  organisation: varchar('organisation', { length: 160 }),
+  district: varchar('district', { length: 80 }).notNull(),
+  state: varchar('state', { length: 60 }).notNull(),
+  applyLink: varchar('apply_link', { length: 300 }),
+  status: postStatus('status').notNull().default('open'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  authorId: uuid('author_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const postInterests = pgTable('post_interests', {
+  postId: uuid('post_id').notNull(),
+  memberId: uuid('member_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const postReports = pgTable('post_reports', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  postId: uuid('post_id').notNull(),
+  memberId: uuid('member_id').notNull(),
+  reason: varchar('reason', { length: 120 }).notNull(),
+  status: reportStatus('status').notNull().default('open'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});

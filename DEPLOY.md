@@ -1,8 +1,8 @@
 # Deploying the NITA Alumni Patna backend
 
-This covers the first live part of the app: the **join form** and the **admin tools** to create and
-verify member accounts. The member app screens (directory, events, board) come in the next phase
-and will use the same deployment and database.
+This covers the live app: the **join form**, **Sign in with Google**, the member area (home,
+alumni directory, my profile, **events with RSVP**, the **Jobs & Help board**) and the **admin
+tools** (registrations, members, events and payments, reported posts, activity log).
 
 Chosen setup: **Cloudflare Workers** (free plan) runs the app, and **Neon** (free plan) holds
 the PostgreSQL database. Cloudflare **Hyperdrive** connects the two.
@@ -105,8 +105,8 @@ Cloudflare. Then add it under the Worker's *Settings → Domains & Routes*.
 **Automatic deploys (optional):** in the Cloudflare dashboard open the Worker and use
 *Settings → Build → Connect* to link the GitHub repository. Set the root directory to `backend`
 and the deploy command to `npx wrangler deploy`. Every push to `main` then redeploys.
-Database changes are still applied by running `npm run cli -- migrate` from your computer, before
-deploying code that needs them.
+Database changes (new tables) are applied automatically the first time the new version runs, so
+no separate step is needed.
 
 ### Step 6: Remove the Vercel project
 The repository no longer contains Vercel settings. Delete the `nitaalumni` project on Vercel so it
@@ -236,6 +236,7 @@ a new empty database: `gunzip -c backups/<file>.sql.gz | psql "<new database URL
 
 - Sign-in is with Google only. Members without a Google account (or whose profile has no email) cannot sign in yet; an admin can add the email in the admin pages.
 - No WhatsApp or email messages yet; applicants are not told automatically when they are approved.
+- Event contributions are paid at the venue (cash or UPI) and recorded by an admin with "Mark paid". Online payment needs a payment-gateway account (for example Razorpay) in the chapter's name.
 - Proof documents are limited to 500 KB to stay within the free plan's CPU limit.
 
 ## Appendix A: trying it on your computer

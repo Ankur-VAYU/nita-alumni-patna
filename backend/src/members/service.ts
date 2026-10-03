@@ -38,7 +38,7 @@ export async function matchBatchList(
 
 /* ---------- audit ---------- */
 
-async function audit(db: Conn, actor: string, action: string, target: string | null, detail?: unknown) {
+export async function audit(db: Conn, actor: string, action: string, target: string | null, detail?: unknown) {
   await db.insert(auditLog).values({ actor, action, target, detail: detail ?? null });
 }
 
@@ -480,14 +480,14 @@ type Visibility = 'members' | 'batch' | 'admins';
 interface Viewer { id: string; role: Member['role']; batch: number }
 
 /** Phone and email follow the owner's choice; admins and the owner always see them. */
-function canSee(vis: Visibility, viewer: Viewer, owner: { id: string; batch: number }) {
+export function canSee(vis: Visibility, viewer: Viewer, owner: { id: string; batch: number }) {
   if (viewer.id === owner.id || viewer.role === 'admin') return true;
   if (vis === 'members') return true;
   if (vis === 'batch') return viewer.batch === owner.batch;
   return false;
 }
 
-async function viewerFor(db: Db, id: string): Promise<Viewer | null> {
+export async function viewerFor(db: Db, id: string): Promise<Viewer | null> {
   const [v] = await db.select({ id: members.id, role: members.role, batch: members.batch, status: members.status }).from(members).where(eq(members.id, id));
   return v && v.status === 'verified' ? { id: v.id, role: v.role, batch: v.batch } : null;
 }

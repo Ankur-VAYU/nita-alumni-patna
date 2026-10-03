@@ -21,7 +21,7 @@
     for (const c of children.flat()) if (c !== null && c !== undefined && c !== false) el.append(c instanceof Node ? c : String(c));
     return el;
   }
-  const fmtDate = (d) => (d ? new Date(d).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '');
+  const fmtDate = (d) => (d ? new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }) : '');
   const initials = (n) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 
   let toastTimer;
@@ -55,13 +55,14 @@
   const TABS = [
     ['pending', 'Registrations'],
     ['members', 'Members'],
-    ...(IS_ADMIN ? [['add', 'Add member'], ['import', 'Import & export']] : []),
+    ...(IS_ADMIN ? [['add', 'Add member'], ['import', 'Import & export'], ['events', 'Events & payments']] : []),
+    ['reports', 'Reports'],
     ['activity', 'Activity log'],
   ];
   const tabBar = h('div', { class: 'tabs', role: 'tablist' });
   const panel = h('section', { class: 'card' });
   root.replaceChildren(
-    h('div', {}, h('h1', {}, 'Admin'), h('p', { class: 'muted' }, IS_ADMIN ? 'Verify registrations and manage members.' : 'As a moderator you can review and decide registrations.')),
+    h('div', {}, h('h1', {}, 'Admin'), h('p', { class: 'muted' }, IS_ADMIN ? 'Verify registrations, manage members, events and reported posts.' : 'As a moderator you can review registrations and reported posts.')),
     tabBar, panel,
   );
 
@@ -76,7 +77,7 @@
     renderTabs(lastPending);
     panel.replaceChildren(h('p', { class: 'muted' }, 'Loading…'));
     try {
-      await { pending: viewPending, members: viewMembers, add: viewAdd, import: viewImport, activity: viewActivity }[k]();
+      await { pending: viewPending, members: viewMembers, add: viewAdd, import: viewImport, events: viewEvents, reports: viewReports, activity: viewActivity }[k]();
     } catch (e) {
       panel.replaceChildren(h('p', { class: 'note bad' }, e.message));
     }
@@ -256,10 +257,140 @@
       result);
   }
 
+  /* ---------- events & payments ---------- */
+  const rupees = (p) => '₹' + (p / 100).toLocaleString('en-IN');
+  // datetime-local values are India time; the server reads them as +05:30.
+  const toIstInput = (d) => (d ? new Date(new Date(d).getTime() + 330 * 60000).toISOString().slice(0, 16) : '');
+
+  async function viewEvents() {
+    const list = await api('/events');
+    const formBox = h('div', {});
+    const openForm = (e) => { formBox.replaceChildren(eventForm(e, () => { formBox.replaceChildren(); viewEvents(); })); formBox.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+    panel.replaceChildren(
+      h('div', { class: 'toolbar between' }, h('h2', {}, 'Events'), h('button', { class: 'btn small', type: 'button', onclick: () => openForm(null) }, 'New event')),
+      formBox,
+      list.length
+        ? h('div', { class: 'tablewrap' }, h('table', {},
+          h('thead', {}, h('tr', {}, ['Event', 'When', 'Contribution', 'Going', 'Status', ''].map((t) => h('th', {}, t)))),
+          h('tbody', {}, list.map((e) => h('tr', {},
+            h('td', {}, h('b', {}, e.title), h('div', { class: 'muted small' }, e.venue)),
+            h('td', {}, fmtDate(e.startsAt)),
+            h('td', {}, e.feePaise ? `${rupees(e.feePaise)} per ${e.feeBasis}` : 'Free'),
+            h('td', {}, `${e.people} people`, e.capacity ? h('div', { class: 'muted small' }, `${e.placesLeft} of ${e.capacity} left`) : null),
+            h('td', {}, e.status === 'cancelled' ? h('span', { class: 'tag bad' }, 'Cancelled') : e.past ? h('span', { class: 'tag' }, 'Over') : h('span', { class: 'tag ok' }, 'Open')),
+            h('td', {}, h('div', { class: 'actions-row' },
+              h('button', { class: 'btn small', type: 'button', onclick: () => viewPayments(e) }, 'RSVPs & payments'),
+              h('button', { class: 'btn ghost small', type: 'button', onclick: () => openForm(e) }, 'Edit'),
+              e.status === 'cancelled'
+                ? h('button', { class: 'btn ghost small', type: 'button', onclick: async () => { try { await api(`/events/${e.id}/restore`, { json: {} }); toast('Restored'); viewEvents(); } catch (err) { toast(err.message); } } }, 'Restore')
+                : h('button', { class: 'btn danger small', type: 'button', onclick: async () => { if (!confirm(`Cancel "${e.title}"? Members will see it as cancelled.`)) return; try { await api(`/events/${e.id}/cancel`, { json: {} }); toast('Cancelled'); viewEvents(); } catch (err) { toast(err.message); } } }, 'Cancel event'))))))))
+        : h('p', { class: 'muted' }, 'No events yet. Create the first one, for example the annual alumni meet.'));
+  }
+
+  function eventForm(e, done) {
+    const fields = [
+      ['title', 'Title', 'text', true, e?.title, 'full'],
+      ['startsAt', 'Starts (India time)', 'datetime-local', true, toIstInput(e?.startsAt)],
+      ['endsAt', 'Ends (optional)', 'datetime-local', false, toIstInput(e?.endsAt)],
+      ['venue', 'Venue', 'text', true, e?.venue, 'full'],
+      ['feeRupees', 'Contribution in ₹ (0 if free)', 'number', true, e ? String(e.feePaise / 100) : '0'],
+      ['feeBasis', 'Contribution is per', 'select', true, e?.feeBasis || 'family'],
+      ['capacity', 'Places (optional)', 'number', false, e?.capacity ? String(e.capacity) : ''],
+      ['description', 'Details (optional)', 'textarea', false, e?.description || '', 'full'],
+    ];
+    const errs = {};
+    const form = h('form', { class: 'form card', novalidate: true },
+      h('h2', { class: 'full' }, e ? 'Edit event' : 'New event'),
+      fields.map(([name, label, type, req, value, cls]) => {
+        const id = 'ev-' + name;
+        const input = type === 'select'
+          ? h('select', { name, id }, [['family', 'Family'], ['person', 'Person (guests pay too)']].map(([v, l]) => h('option', { value: v, selected: v === value }, l)))
+          : type === 'textarea'
+            ? h('textarea', { name, id, rows: 4 }, value)
+            : h('input', { name, id, type, required: req, value: value ?? '', min: type === 'number' ? '0' : null });
+        errs[name] = h('span', { class: 'err' });
+        return h('div', { class: 'field' + (cls ? ' ' + cls : '') }, h('label', { for: id }, label), input, errs[name]);
+      }),
+      h('div', { class: 'full actions-row' }, h('button', { class: 'btn' }, e ? 'Save changes' : 'Create event'), h('button', { class: 'btn ghost', type: 'button', onclick: () => done() }, 'Close')));
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      Object.values(errs).forEach((x) => (x.textContent = ''));
+      const data = Object.fromEntries(new FormData(form));
+      try {
+        await api(e ? `/events/${e.id}` : '/events', { method: e ? 'PUT' : 'POST', json: data });
+        toast(e ? 'Event saved' : 'Event created');
+        done();
+      } catch (err) {
+        if (err.fields) Object.entries(err.fields).forEach(([k, v]) => { if (errs[k]) errs[k].textContent = v; });
+        toast(err.message);
+      }
+    });
+    return form;
+  }
+
+  async function viewPayments(e) {
+    const r = await api(`/events/${e.id}/payments`);
+    const owed = r.rows.filter((x) => x.paidPaise < x.duePaise);
+    panel.replaceChildren(
+      h('p', {}, h('button', { class: 'btn ghost small', type: 'button', onclick: () => viewEvents() }, '← All events')),
+      h('h2', {}, r.event.title),
+      h('p', { class: 'muted small' }, `${fmtDate(r.event.startsAt)} · ${r.event.venue}`),
+      h('div', { class: 'stats' },
+        h('div', { class: 'card stat' }, h('b', {}, r.rows.length), h('span', {}, 'RSVPs')),
+        h('div', { class: 'card stat' }, h('b', {}, r.people), h('span', {}, 'People incl. guests')),
+        h('div', { class: 'card stat' }, h('b', {}, rupees(r.collectedPaise)), h('span', {}, 'Collected')),
+        h('div', { class: 'card stat' }, h('b', {}, rupees(r.expectedPaise - r.collectedPaise)), h('span', {}, `Still due (${owed.length})`))),
+      r.rows.length
+        ? h('div', { class: 'tablewrap' }, h('table', {},
+          h('thead', {}, h('tr', {}, ['Member', 'Mobile', 'Guests', 'Due', 'Paid', ''].map((t) => h('th', {}, t)))),
+          h('tbody', {}, r.rows.map((x) => h('tr', {},
+            h('td', {}, h('b', {}, x.name), h('div', { class: 'muted small' }, x.batch)),
+            h('td', {}, x.phone),
+            h('td', {}, x.guests),
+            h('td', {}, rupees(x.duePaise)),
+            h('td', {}, x.paidPaise >= x.duePaise && x.duePaise > 0
+              ? [h('span', { class: 'tag ok' }, 'Paid'), h('div', { class: 'muted small' }, `${x.paidRecordedBy || ''} · ${fmtDate(x.paidAt)}`)]
+              : x.duePaise === 0 ? h('span', { class: 'muted' }, '—') : rupees(x.paidPaise)),
+            h('td', {}, x.paidPaise < x.duePaise
+              ? h('button', { class: 'btn small', type: 'button', onclick: async (ev) => {
+                if (!confirm(`Record ${rupees(x.duePaise - x.paidPaise)} received from ${x.name}?`)) return;
+                ev.target.disabled = true;
+                try { await api(`/events/${e.id}/payments/${x.memberId}`, { json: {} }); toast('Payment recorded'); viewPayments(e); }
+                catch (err) { toast(err.message); ev.target.disabled = false; }
+              } }, 'Mark paid')
+              : null))))))
+        : h('p', { class: 'muted' }, 'No RSVPs yet.'),
+      h('p', { class: 'muted small' }, 'Use "Mark paid" for cash or UPI received at the venue or before. Each entry is saved in the activity log.'));
+  }
+
+  /* ---------- reported posts ---------- */
+  async function viewReports() {
+    const list = await api('/reports');
+    if (!list.length) return panel.replaceChildren(h('h2', {}, 'Reported posts'), h('p', { class: 'muted' }, 'No open reports. When a member reports a post on Jobs & Help, it appears here.'));
+    panel.replaceChildren(h('h2', {}, `Reported posts (${list.length})`),
+      h('p', { class: 'muted small' }, 'Remove a post that breaks the rules (fees, agencies, misleading or inappropriate). Dismiss if it is fine; it stays on the board.'),
+      h('div', { class: 'list' }, list.map((p) => {
+        const act = (path, msg) => async (ev) => {
+          ev.target.disabled = true;
+          try { await api(`/posts/${p.postId}/${path}`, { json: {} }); toast(msg); viewReports(); }
+          catch (err) { toast(err.message); ev.target.disabled = false; }
+        };
+        return h('article', { class: 'card' },
+          h('p', {}, h('span', { class: 'tag ' + p.type }, p.type), ' ', h('span', { class: 'tag bad' }, `${p.count} report${p.count === 1 ? '' : 's'}`)),
+          h('h2', { style: 'margin-top:8px' }, p.title),
+          h('p', { class: 'muted small' }, `Posted by ${p.authorName}`),
+          h('p', { class: 'body' }, p.body),
+          h('p', { class: 'small' }, h('b', {}, 'Reasons: '), p.reasons.join(' · ')),
+          h('div', { class: 'actions-row', style: 'margin-top:12px' },
+            h('button', { class: 'btn danger small', type: 'button', onclick: async (ev) => { if (confirm('Remove this post from the board?')) await act('remove', 'Post removed')(ev); } }, 'Remove post'),
+            h('button', { class: 'btn ghost small', type: 'button', onclick: act('dismiss', 'Reports dismissed') }, 'Dismiss reports')));
+      })));
+  }
+
   /* ---------- activity ---------- */
   async function viewActivity() {
     const list = await api('/audit?limit=200');
-    const LABELS = { 'member.registered': 'registered via the form', 'member.created': 'created a member', 'member.approved': 'approved', 'member.rejected': 'rejected', 'member.role_changed': 'changed a role', 'member.suspended': 'suspended', 'member.reinstated': 'reinstated', 'members.imported': 'imported members', 'batch_list.uploaded': 'uploaded the batch list', 'member.signed_in': 'signed in' };
+    const LABELS = { 'member.registered': 'registered via the form', 'member.created': 'created a member', 'member.approved': 'approved', 'member.rejected': 'rejected', 'member.role_changed': 'changed a role', 'member.suspended': 'suspended', 'member.reinstated': 'reinstated', 'members.imported': 'imported members', 'batch_list.uploaded': 'uploaded the batch list', 'member.signed_in': 'signed in', 'event.created': 'created an event', 'event.updated': 'edited an event', 'event.cancelled': 'cancelled an event', 'event.restored': 'restored an event', 'event.payment_recorded': 'recorded a payment', 'post.removed': 'removed a post', 'post.reports_dismissed': 'dismissed reports', 'post.status_changed': 'changed a post' };
     panel.replaceChildren(h('h2', {}, 'Activity log'), h('p', { class: 'muted small' }, 'Every registration, decision and change. It cannot be edited.'),
       h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'When'), h('th', {}, 'Who'), h('th', {}, 'What'), h('th', {}, 'Details'))),
         h('tbody', {}, list.map((a) => h('tr', {}, h('td', {}, fmtDate(a.createdAt)), h('td', {}, a.actor), h('td', {}, LABELS[a.action] || a.action),
