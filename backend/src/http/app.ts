@@ -9,12 +9,13 @@ import type { Db } from '../db/index.js';
 import { authorizationUrl, exchangeCode, randomToken, type GoogleConfig } from '../auth/google.js';
 import { AppError, badRequest, forbidden, unauthorized } from '../lib/errors.js';
 import { BIHAR_DISTRICTS, BRANCHES, DEGREES, FIRST_BATCH_YEAR, TITLES, WORK_STATES } from '../lib/reference.js';
-import { adminCreateInput, fieldErrors, joinInput, rejectInput, roleInput } from '../members/schemas.js';
+import { adminCreateInput, directoryQuery, fieldErrors, joinInput, profileUpdateInput, rejectInput, roleInput } from '../members/schemas.js';
 import {
   approveMember, createByAdmin, exportMembersCsv, getFile, getMember, importBatchList, importMembers,
-  findMemberByEmail, getSessionMember, listAudit, listMembers, recordSignIn, registerFromForm, rejectMember, setRole, setStatus,
+  chapterStats, findMemberByEmail, getDirectoryPhoto, getSessionMember, listAudit, listDirectory, listMembers, recordSignIn, registerFromForm,
+  rejectMember, setRole, setStatus, updateOwnProfile,
 } from '../members/service.js';
-import { adminPage, loginPage, mePage, privacyPage } from './pages.js';
+import { adminPage, alumniPage, editProfilePage, homePage, loginPage, mePage, privacyPage } from './pages.js';
 import joinTemplate from './join-template.js';
 
 export interface DbSession {
@@ -187,7 +188,6 @@ export function createHttpApp(opts: HttpOptions) {
 
   /* ---------- public ---------- */
 
-  app.get('/', (c) => c.redirect('/join'));
   app.get('/join', (c) => {
     c.header('content-security-policy', FORM_CSP);
     c.header('cache-control', 'no-cache');
@@ -316,6 +316,60 @@ export function createHttpApp(opts: HttpOptions) {
   app.get('/logout', (c) => {
     deleteCookie(c, SESSION_COOKIE, { path: '/' });
     return toLogin(c, 'signed_out');
+  });
+
+  app.get('/', withDb, async (c) => c.redirect((await currentActor(c)) ? '/home' : '/join'));
+
+  /** Pages for signed-in members. A session opened with the admin key has no member profile. */
+  async function memberPage(c: Context<Env>) {
+    const who = await currentActor(c);
+    if (!who) return { redirect: toLogin(c, 'need') };
+    if (who.kind !== 'member' || !who.id) return { redirect: c.redirect('/admin') };
+    pageHeaders(c);
+    return { who: who as Actor & { id: string } };
+  }
+
+  app.get('/home', withDb, async (c) => {
+    const r = await memberPage(c);
+    if (r.redirect) return r.redirect;
+    const m = await getMember(c.var.db, r.who.id);
+    const missing = [
+      !m.hasPhoto && 'photo', !m.position && 'position', !m.organisation && 'organisation',
+      !m.workDistrict && 'work city', !m.linkedin && 'LinkedIn', !m.skills && 'skills',
+    ].filter(Boolean) as string[];
+    return c.html(homePage(r.who, await chapterStats(c.var.db), missing));
+  });
+
+  app.get('/alumni', withDb, async (c) => {
+    const r = await memberPage(c);
+    return r.redirect ?? c.html(alumniPage(r.who));
+  });
+
+  app.get('/me/edit', withDb, async (c) => {
+    const r = await memberPage(c);
+    return r.redirect ?? c.html(editProfilePage(r.who));
+  });
+
+  /* ---------- member API (signed-in, verified members) ---------- */
+
+  // Applied route by route: a middleware on the whole /api/v1 prefix would also catch the join form and admin API.
+  const requireMember = createMiddleware<Env>(async (c, next) => {
+    const who = await currentActor(c);
+    if (!who || who.kind !== 'member' || !who.id) throw unauthorized('Please sign in again');
+    if (c.req.method !== 'GET' && c.req.header(CSRF_HEADER) !== CSRF_VALUE) throw forbidden('Missing request header');
+    c.set('actor', who);
+    await next();
+  });
+  app.get('/api/v1/members', withDb, requireMember, async (c) => c.json(await listDirectory(c.var.db, c.var.actor.id!, parse(directoryQuery, c.req.query()))));
+  app.get('/api/v1/members/:id/photo', withDb, requireMember, async (c) => {
+    const f = await getDirectoryPhoto(c.var.db, c.req.param('id'));
+    return c.body(new Uint8Array(f.data), 200, { 'content-type': f.type, 'cache-control': 'private, max-age=300' });
+  });
+  app.get('/api/v1/stats', withDb, requireMember, async (c) => c.json(await chapterStats(c.var.db)));
+  app.get('/api/v1/me/profile', withDb, requireMember, async (c) => c.json(await getMember(c.var.db, c.var.actor.id!)));
+  app.put('/api/v1/me/profile', withDb, requireMember, async (c) => {
+    const input = parse(profileUpdateInput, await readJson(c, 600 * 1024));
+    return c.json(await updateOwnProfile(c.var.db, c.var.actor.id!, input));
   });
 
   app.get('/me', withDb, async (c) => {

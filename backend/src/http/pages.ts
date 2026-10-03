@@ -15,12 +15,12 @@ function layout(title: string, body: string, opts: { user?: { name: string; role
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Figtree:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/site.css">
-${opts.script ? `<script src="${opts.script}" defer></script>` : ''}
+${opts.script ? `<script src="/common.js" defer></script><script src="${opts.script}" defer></script>` : ''}
 </head>
 <body>
 <header class="bar">
-  <a class="brand" href="${u ? '/me' : '/join'}"><img src="/emblem.svg" alt="" width="36" height="36"><span><b>NITA Alumni</b><small>Patna Chapter</small></span></a>
-  ${u ? `<nav class="who"><span>${esc(u.name)}${u.role !== 'member' ? ` <em class="pill">${esc(u.role)}</em>` : ''}</span>${u.role === 'admin' || u.role === 'moderator' ? '<a href="/admin">Admin</a>' : ''}<a href="/me">My profile</a><a href="/logout">Sign out</a></nav>` : ''}
+  <a class="brand" href="${u ? '/home' : '/join'}"><img src="/emblem.svg" alt="" width="36" height="36"><span><b>NITA Alumni</b><small>Patna Chapter</small></span></a>
+  ${u ? `<nav class="who"><a href="/home">Home</a><a href="/alumni">Alumni</a><a href="/me">My profile</a>${u.role === 'admin' || u.role === 'moderator' ? '<a href="/admin">Admin</a>' : ''}<a href="/logout">Sign out</a><span class="me">${esc(u.name)}${u.role !== 'member' ? ` <em class="pill">${esc(u.role)}</em>` : ''}</span></nav>` : ''}
 </header>
 <main class="page">${body}</main>
 <footer class="foot"><a href="/privacy">Privacy notice</a> · <a href="/join">Join</a> · <a href="/login">Sign in</a></footer>
@@ -76,7 +76,7 @@ export function mePage(m: MeView, user: { name: string; role: string }) {
   return layout('My profile', `
 <section class="card">
   <div class="head">
-    <div class="avatar">${esc(m.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase())}</div>
+    <div class="avatar">${m.hasPhoto ? `<img src="/api/v1/members/${esc(m.id)}/photo" alt="">` : esc(m.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase())}</div>
     <div><h1>${esc(m.name)}</h1><p class="muted">${esc(m.degree)} · ${esc(m.branch)} · ${esc(m.batch)}${m.title ? ` · <b>${esc(m.title)}</b>` : ''}</p></div>
   </div>
   <p class="note ok">Verified member${m.role !== 'member' ? ` · chapter ${esc(m.role)}` : ''}</p>
@@ -85,8 +85,8 @@ export function mePage(m: MeView, user: { name: string; role: string }) {
     ${row('Position', m.position)}${row('Organisation', m.organisation)}
     ${row('Works in', [m.workDistrict, m.workState].filter(Boolean).join(', '))}${row('Home district', `${m.homeDistrict}, Bihar`)}
   </dl>
-  <p class="muted small">Editing your profile and the alumni directory are coming next. To change something now, contact a chapter admin.</p>
-  ${m.role === 'admin' || m.role === 'moderator' ? '<p><a class="btn" href="/admin">Open admin</a></p>' : ''}
+  <p class="actions-row"><a class="btn" href="/me/edit">Edit my profile</a>${m.role === 'admin' || m.role === 'moderator' ? '<a class="btn ghost" href="/admin">Open admin</a>' : ''}</p>
+  <p class="muted small">Name, email, roll number, degree, branch and batch are checked at verification. To correct them, contact a chapter admin.</p>
 </section>`, { user });
 }
 
@@ -144,4 +144,40 @@ export function privacyPage(contactEmail: string | undefined) {
 
   <p class="muted small">Last updated: ${new Date().getFullYear()}.</p>
 </article>`);
+}
+
+export interface Stats { members: number; inBihar: number; outsideBihar: number; mentors: number; homeDistricts: number }
+
+export function homePage(user: { name: string; role: string }, stats: Stats, missing: string[]) {
+  const first = user.name.split(/\s+/)[0];
+  return layout('Home', `
+<section class="hero-band">
+  <div>
+    <p class="eyebrow">NIT Agartala alumni · Patna Chapter</p>
+    <h1>Namaste, ${esc(first)}</h1>
+    <p>Alumni from Bihar, wherever they work.</p>
+  </div>
+  <img src="/emblem.svg" alt="" width="88" height="88">
+</section>
+${missing.length ? `<section class="card"><p class="note warn">Your profile is missing: ${esc(missing.join(', '))}. Complete profiles are easier for fellow alumni to find.</p><p><a class="btn" href="/me/edit">Complete my profile</a></p></section>` : ''}
+<section class="stats">
+  <div class="card stat"><b>${stats.members}</b><span>verified alumni</span></div>
+  <div class="card stat"><b>${stats.inBihar}</b><span>working in Bihar</span></div>
+  <div class="card stat"><b>${stats.outsideBihar}</b><span>working outside Bihar</span></div>
+  <div class="card stat"><b>${stats.mentors}</b><span>open to mentoring</span></div>
+</section>
+<section class="tiles">
+  <a class="card tile" href="/alumni"><h2>Alumni directory</h2><p class="muted">Find batchmates by name, branch, batch, home district or where they work.</p></a>
+  <a class="card tile" href="/me"><h2>My profile</h2><p class="muted">Your details, photo, and who can see your phone and email.</p></a>
+  ${user.role === 'admin' || user.role === 'moderator' ? '<a class="card tile" href="/admin"><h2>Admin</h2><p class="muted">Review registrations and manage members.</p></a>' : ''}
+  <div class="card tile soon"><h2>Events &amp; Jobs board</h2><p class="muted">Chapter meets with RSVP, and vacancies and help from fellow alumni. Coming soon.</p></div>
+</section>`, { user });
+}
+
+export function alumniPage(user: { name: string; role: string }) {
+  return layout('Alumni', `<div id="directory"><h1>Alumni directory</h1><p class="muted">Loading…</p></div>`, { user, script: '/directory.js' });
+}
+
+export function editProfilePage(user: { name: string; role: string }) {
+  return layout('Edit my profile', `<div id="profile-edit"><h1>Edit my profile</h1><p class="muted">Loading…</p></div>`, { user, script: '/profile.js' });
 }

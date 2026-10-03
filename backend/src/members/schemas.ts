@@ -144,3 +144,28 @@ export function fieldErrors(error: z.ZodError) {
   }
   return out;
 }
+
+/**
+ * What members may change themselves. Name, email (their sign-in), roll number, degree, branch
+ * and batch are checked at verification, so only an admin changes those.
+ */
+export const profileUpdateInput = memberFields
+  .pick({
+    phone: true, position: true, organisation: true, workDistrict: true, workState: true, homeDistrict: true,
+    linkedin: true, skills: true, openToMentor: true, phoneVisibility: true, emailVisibility: true,
+  })
+  .extend({
+    photo: optional(dataUrlFile(['image/jpeg', 'image/png', 'image/webp'], 300 * 1024, 'Photo')),
+    removePhoto: optional(z.boolean()),
+  });
+export type ProfileUpdateInput = z.output<typeof profileUpdateInput>;
+
+export const directoryQuery = z.object({
+  q: optional(z.string().trim().max(100)),
+  branch: optional(z.string().max(80)),
+  batch: optional(z.coerce.number().int()),
+  homeDistrict: optional(z.string().max(40)),
+  workState: optional(z.string().max(60)),
+  mentor: optional(z.enum(['true', 'false'])).transform((v) => v === 'true'),
+  offset: optional(z.coerce.number().int().min(0)).transform((v) => v ?? 0),
+});

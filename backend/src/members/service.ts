@@ -6,7 +6,7 @@ import { badRequest, conflict, notFound, uniqueViolation } from '../lib/errors.j
 import { normalizePhone } from '../lib/phone.js';
 import { BRANCHES, DEGREES, matchOption } from '../lib/reference.js';
 import { parseBatchCsv, parseMemberCsv } from './csv.js';
-import { adminCreateInput, fieldErrors, type AdminCreateInput, type JoinInput, type MemberFields } from './schemas.js';
+import { adminCreateInput, fieldErrors, type AdminCreateInput, type JoinInput, type MemberFields, type ProfileUpdateInput } from './schemas.js';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Conn = Db | Tx;
@@ -472,4 +472,119 @@ export async function getSessionMember(db: Db, id: string): Promise<SessionMembe
 
 export async function recordSignIn(db: Db, m: SessionMember, method: string) {
   await audit(db, `member:${m.name}`, 'member.signed_in', m.id, { method, role: m.role });
+}
+
+/* ---------- member area: directory, own profile ---------- */
+
+type Visibility = 'members' | 'batch' | 'admins';
+interface Viewer { id: string; role: Member['role']; batch: number }
+
+/** Phone and email follow the owner's choice; admins and the owner always see them. */
+function canSee(vis: Visibility, viewer: Viewer, owner: { id: string; batch: number }) {
+  if (viewer.id === owner.id || viewer.role === 'admin') return true;
+  if (vis === 'members') return true;
+  if (vis === 'batch') return viewer.batch === owner.batch;
+  return false;
+}
+
+async function viewerFor(db: Db, id: string): Promise<Viewer | null> {
+  const [v] = await db.select({ id: members.id, role: members.role, batch: members.batch, status: members.status }).from(members).where(eq(members.id, id));
+  return v && v.status === 'verified' ? { id: v.id, role: v.role, batch: v.batch } : null;
+}
+
+export const DIRECTORY_PAGE = 60;
+
+export async function listDirectory(
+  db: Db,
+  viewerId: string,
+  f: { q?: string; branch?: string; batch?: number; homeDistrict?: string; workState?: string; mentor?: boolean; offset?: number },
+) {
+  const viewer = await viewerFor(db, viewerId);
+  if (!viewer) throw notFound('Member not found');
+  const where: SQL[] = [eq(members.status, 'verified')];
+  if (f.q) {
+    const like = `%${f.q.replace(/[%_]/g, '\\$&')}%`;
+    where.push(or(ilike(members.name, like), ilike(members.organisation, like), ilike(members.position, like), ilike(members.skills, like), ilike(members.workDistrict, like))!);
+  }
+  if (f.branch) where.push(eq(members.branch, f.branch));
+  if (f.batch) where.push(eq(members.batch, f.batch));
+  if (f.homeDistrict) where.push(eq(members.homeDistrict, f.homeDistrict));
+  if (f.workState) where.push(eq(members.workState, f.workState));
+  if (f.mentor) where.push(eq(members.openToMentor, true));
+  const rows = await db
+    .select({
+      id: members.id, name: members.name, batch: members.batch, branch: members.branch, degree: members.degree,
+      position: members.position, organisation: members.organisation, workDistrict: members.workDistrict, workState: members.workState,
+      homeDistrict: members.homeDistrict, linkedin: members.linkedin, skills: members.skills, openToMentor: members.openToMentor,
+      title: members.title, role: members.role, phone: members.phone, email: members.email,
+      phoneVisibility: members.phoneVisibility, emailVisibility: members.emailVisibility,
+      hasPhoto: sql<boolean>`${members.photo} IS NOT NULL`,
+    })
+    .from(members)
+    .where(and(...where))
+    .orderBy(members.batch, members.name)
+    .limit(DIRECTORY_PAGE + 1)
+    .offset(f.offset ?? 0);
+  const more = rows.length > DIRECTORY_PAGE;
+  // Hidden contact details are removed here, on the server, so they never reach the browser.
+  const items = rows.slice(0, DIRECTORY_PAGE).map(({ phoneVisibility, emailVisibility, phone, email, ...r }) => ({
+    ...r,
+    phone: canSee(phoneVisibility, viewer, r) ? phone : null,
+    email: canSee(emailVisibility, viewer, r) ? email : null,
+    isMe: r.id === viewer.id,
+  }));
+  return { items, more };
+}
+
+/** A member's photo, for other verified members. */
+export async function getDirectoryPhoto(db: Db, id: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw notFound('No photo');
+  const [row] = await db.select({ data: members.photo, type: members.photoType, status: members.status }).from(members).where(eq(members.id, id));
+  if (!row?.data || !row.type || row.status !== 'verified') throw notFound('No photo');
+  return { data: row.data, type: row.type };
+}
+
+export async function chapterStats(db: Db) {
+  const [r] = await db
+    .select({
+      members: sql<number>`count(*)::int`,
+      inBihar: sql<number>`count(*) FILTER (WHERE ${members.workState} = 'Bihar')::int`,
+      mentors: sql<number>`count(*) FILTER (WHERE ${members.openToMentor})::int`,
+      districts: sql<number>`count(DISTINCT ${members.homeDistrict})::int`,
+    })
+    .from(members)
+    .where(eq(members.status, 'verified'));
+  return { members: r.members, inBihar: r.inBihar, outsideBihar: r.members - r.inBihar, mentors: r.mentors, homeDistricts: r.districts };
+}
+
+/** A member updates their own profile. Identity fields stay as verified. */
+export async function updateOwnProfile(db: Db, id: string, input: ProfileUpdateInput) {
+  const before = await getMember(db, id);
+  const { photo, removePhoto, ...f } = input;
+  const set: Partial<NewMember> = {
+    phone: f.phone,
+    position: f.position ?? null,
+    organisation: f.organisation ?? null,
+    workDistrict: f.workDistrict ?? null,
+    workState: f.workState ?? null,
+    homeDistrict: f.homeDistrict,
+    linkedin: f.linkedin ?? null,
+    skills: f.skills ?? null,
+    openToMentor: f.openToMentor,
+    phoneVisibility: f.phoneVisibility,
+    emailVisibility: f.emailVisibility,
+    updatedAt: new Date(),
+  };
+  if (photo) Object.assign(set, { photo: photo.data, photoType: photo.type });
+  else if (removePhoto) Object.assign(set, { photo: null, photoType: null });
+  try {
+    await db.update(members).set(set).where(eq(members.id, id));
+  } catch (err) {
+    const c = uniqueViolation(err);
+    if (c !== null) throw duplicateError(c);
+    throw err;
+  }
+  const changed = (Object.keys(set) as (keyof typeof set)[]).filter((k) => k !== 'updatedAt' && k !== 'photo' && k !== 'photoType' && (before as Record<string, unknown>)[k] !== set[k]);
+  await audit(db, `member:${before.name}`, 'member.profile_updated', id, { fields: [...changed, ...(photo ? ['photo'] : removePhoto ? ['photo removed'] : [])].join(', ') });
+  return getMember(db, id);
 }

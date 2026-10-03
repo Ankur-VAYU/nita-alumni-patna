@@ -107,3 +107,38 @@ th { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; colo
 .prose h2 { margin-top: 12px; }
 .prose ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
 .foot { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 0 16px 32px; }
+
+/* Member area */
+.who .me { opacity: 0.8; }
+.actions-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.hero-band { display: flex; justify-content: space-between; align-items: center; gap: 16px; background: radial-gradient(120% 140% at 100% 0%, rgb(201 160 74 / 0.18), transparent 55%), #13245a; color: #f3f1ea; border-radius: 14px; padding: 28px; }
+.hero-band h1 { font-size: 2rem; }
+.hero-band .eyebrow { color: var(--gold); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 6px; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.stat { display: grid; gap: 2px; padding: 18px; }
+.stat b { font: 600 1.8rem/1.1 var(--display); }
+.stat span { color: var(--muted); font-size: 0.88rem; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.tile { text-decoration: none; color: inherit; display: grid; gap: 6px; }
+a.tile:hover { border-color: var(--gold); }
+.tile.soon { opacity: 0.75; }
+.filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 16px; }
+.filters select { width: auto; max-width: 100%; }
+.filters .grow { flex: 1 1 220px; }
+.people { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.person { display: grid; gap: 10px; align-content: start; padding: 18px; }
+.person h2 { font-size: 1.05rem; }
+.person-head { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.person-head > div { min-width: 0; }
+.person .avatar { width: 52px; height: 52px; font-size: 1rem; }
+.person .kv { margin: 0; font-size: 0.9rem; }
+.avatar.big { width: 96px; height: 96px; font-size: 1.6rem; }
+.photo-edit { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.check { display: flex; gap: 8px; align-items: center; font-weight: 500; color: var(--ink); }
+.check input { width: 18px; height: 18px; accent-color: var(--accent); }
+@media (max-width: 720px) {
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero-band { padding: 20px; }
+  .hero-band img { width: 64px; height: 64px; }
+  .who { gap: 10px; font-size: 0.85rem; }
+}

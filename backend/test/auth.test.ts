@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { ADMIN_KEY, admin, setup, validJoin } from './helpers.js';
+import { ADMIN_KEY, JPEG, admin, setup, validJoin } from './helpers.js';
 
 const GOOGLE = { clientId: 'test-client.apps.googleusercontent.com', clientSecret: 'test-secret' };
 const b64url = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -158,5 +158,67 @@ describe('email for sign-in', () => {
     await t.inject({ method: 'POST', url: '/api/v1/join', payload: validJoin() });
     const dup = await t.inject({ method: 'POST', url: '/api/v1/join', payload: validJoin({ phone: '9876500000', rollNo: 'OTHER1', email: 'KUMAR.GAURAV@example.com' }) });
     expect(dup.json().error).toBe('DUPLICATE_EMAIL');
+  });
+});
+
+describe('member area', () => {
+  const add = (over: Record<string, unknown>) =>
+    t.inject({ method: 'POST', url: '/api/v1/admin/members', headers: admin, payload: { batch: 2015, branch: 'Civil Engineering', degree: 'B.Tech', homeDistrict: 'Patna', ...over } });
+
+  it('shows the directory with phone and email filtered by each person\'s privacy choice', async () => {
+    await add({ name: 'Batch Mate', phone: '9000000002', email: 'mate@example.com', phoneVisibility: 'batch' });
+    await add({ name: 'Private Person', phone: '9000000003', email: 'private@example.com', phoneVisibility: 'admins', emailVisibility: 'admins' });
+    await add({ name: 'Older Batch', phone: '9000000004', email: 'older@example.com', batch: 2008, phoneVisibility: 'batch' });
+    await add({ name: 'Me Myself', phone: '9000000005', email: 'me@example.com' });
+    await t.inject({ method: 'POST', url: '/api/v1/join', payload: validJoin({ email: 'pending@example.com' }) });
+    const { cookie, location } = await googleSignIn('me@example.com');
+    expect(location).toBe('/me');
+    const { items } = (await t.inject({ url: '/api/v1/members', headers: { cookie } })).json();
+    const by = Object.fromEntries(items.map((m: { name: string }) => [m.name, m]));
+    expect(Object.keys(by).sort()).toEqual(['Batch Mate', 'Me Myself', 'Older Batch', 'Private Person']);
+    expect(by['Batch Mate'].phone).toBe('+919000000002');
+    expect(by['Older Batch'].phone).toBeNull();
+    expect(by['Private Person'].phone).toBeNull();
+    expect(by['Private Person'].email).toBeNull();
+    expect(by['Me Myself'].isMe).toBe(true);
+    const filtered = (await t.inject({ url: '/api/v1/members?batch=2008', headers: { cookie } })).json();
+    expect(filtered.items.map((m: { name: string }) => m.name)).toEqual(['Older Batch']);
+    // Admins see everything.
+    await add({ name: 'Chapter Admin', phone: '9000000006', email: 'boss@example.com', role: 'admin' });
+    const a = await googleSignIn('boss@example.com');
+    const all = (await t.inject({ url: '/api/v1/members', headers: { cookie: a.cookie } })).json().items;
+    expect(all.find((m: { name: string }) => m.name === 'Private Person').phone).toBe('+919000000003');
+  });
+
+  it('lets members edit their own details and photo, but not their identity', async () => {
+    await add({ name: 'Me Myself', phone: '9000000005', email: 'me@example.com' });
+    const { cookie } = await googleSignIn('me@example.com');
+    const body = { phone: '9000000005', homeDistrict: 'Gaya', position: 'Engineer', organisation: 'NTPC', workDistrict: 'Pune', workState: 'Maharashtra', openToMentor: true, phoneVisibility: 'batch', emailVisibility: 'members', email: 'hijack@example.com', batch: 1999, photo: JPEG };
+    expect((await t.inject({ method: 'PUT', url: '/api/v1/me/profile', headers: { cookie }, payload: body })).statusCode).toBe(403);
+    const res = await t.inject({ method: 'PUT', url: '/api/v1/me/profile', headers: { cookie, 'x-requested-with': 'nita-admin' }, payload: body });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ homeDistrict: 'Gaya', position: 'Engineer', workState: 'Maharashtra', openToMentor: true, phoneVisibility: 'batch', email: 'me@example.com', batch: 2015, hasPhoto: true });
+    const photo = await t.inject({ url: `/api/v1/members/${res.json().id}/photo`, headers: { cookie } });
+    expect(photo.headers['content-type']).toBe('image/jpeg');
+    const bad = await t.inject({ method: 'PUT', url: '/api/v1/me/profile', headers: { cookie, 'x-requested-with': 'nita-admin' }, payload: { ...body, homeDistrict: 'Kolkata', photo: undefined } });
+    expect(bad.json().fields.homeDistrict).toMatch(/Bihar/);
+    const log = (await t.inject({ url: '/api/v1/admin/audit', headers: admin })).json();
+    expect(log[0]).toMatchObject({ action: 'member.profile_updated', actor: 'member:Me Myself' });
+  });
+
+  it('serves the member pages only to signed-in members', async () => {
+    expect((await t.inject('/')).headers.location).toBe('/join');
+    expect((await t.inject('/alumni')).headers.location).toBe('/login?m=need');
+    expect((await t.inject('/api/v1/members')).statusCode).toBe(401);
+    await add({ name: 'Me Myself', phone: '9000000005', email: 'me@example.com' });
+    const { cookie } = await googleSignIn('me@example.com');
+    expect((await t.inject({ url: '/', headers: { cookie } })).headers.location).toBe('/home');
+    const home = await t.inject({ url: '/home', headers: { cookie } });
+    expect(home.body).toContain('Namaste, Me');
+    expect(home.body).toContain('verified alumni');
+    for (const p of ['/alumni', '/me/edit', '/me']) expect((await t.inject({ url: p, headers: { cookie } })).statusCode).toBe(200);
+    // The join form and admin API are not affected by the member check.
+    expect((await t.inject({ method: 'POST', url: '/api/v1/join', payload: validJoin({ email: 'new@example.com' }) })).statusCode).toBe(201);
+    expect((await t.inject({ url: '/api/v1/admin/members', headers: admin })).statusCode).toBe(200);
   });
 });
