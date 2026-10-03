@@ -8,7 +8,7 @@ Chosen setup: **Cloudflare Workers** (free plan) runs the app, and **Neon** (fre
 the PostgreSQL database. Cloudflare **Hyperdrive** connects the two.
 
 ```
-Member's phone ──► Cloudflare Worker "nitaalumini" ──► Hyperdrive ──► Neon PostgreSQL
+Member's phone ──► Cloudflare Worker "nitaalumni" ──► Hyperdrive ──► Neon PostgreSQL
                    (join form, admin API)                             (all data)
 Admin's computer ── command line (npm run cli) ─────────────────────► Neon PostgreSQL
 ```
@@ -100,7 +100,7 @@ npx wrangler secret put ADMIN_API_KEY      # paste the same value as in your .en
 npm run deploy
 ```
 The first time, Cloudflare asks you to choose a **workers.dev subdomain** for your account (for
-example `nita-patna`). The app is then at `https://nitaalumini.<your-subdomain>.workers.dev`.
+example `nita-patna`). The app is then at `https://nitaalumni.<your-subdomain>.workers.dev`.
 Open `/health` (should show `{"ok":true}`), then `/join`.
 
 For a shorter address such as `join.yourchapter.org`, you need your own domain added to
@@ -113,7 +113,7 @@ Database changes are still applied by running `npm run cli -- migrate` from your
 deploying code that needs them.
 
 ### Step 6: Remove the Vercel project
-The repository no longer contains Vercel settings. Delete the `nitaalumini` project on Vercel so it
+The repository no longer contains Vercel settings. Delete the `nitaalumni` project on Vercel so it
 stops building on every push. If you created a Neon database through Vercel, you can reuse it
 instead of making a new one in step 1, or delete it.
 
@@ -172,7 +172,7 @@ limit.
 
 ## 5. Collecting data and reviewing registrations
 
-Share `https://nitaalumini.<your-subdomain>.workers.dev/join` on WhatsApp groups. Registrations
+Share `https://nitaalumni.<your-subdomain>.workers.dev/join` on WhatsApp groups. Registrations
 arrive as **pending**. Until the admin screens are built, review them from the command line:
 ```bash
 npm run cli -- batch:import batch-list.csv --by "Your Name"     # once, and whenever the list changes
@@ -181,7 +181,7 @@ npm run cli -- member:approve 9XXXXXXXXX --by "Your Name"
 npm run cli -- member:reject 9XXXXXXXXX --reason "Roll number not found in batch records" --by "Your Name"
 ```
 To see a proof document before deciding:
-`curl -H "x-admin-key: $ADMIN_API_KEY" -o proof.pdf https://nitaalumini.<your-subdomain>.workers.dev/api/v1/admin/members/<id>/proof`
+`curl -H "x-admin-key: $ADMIN_API_KEY" -o proof.pdf https://nitaalumni.<your-subdomain>.workers.dev/api/v1/admin/members/<id>/proof`
 
 ## 6. Backups
 

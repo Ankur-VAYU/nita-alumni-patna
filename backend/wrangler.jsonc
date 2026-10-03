@@ -1,7 +1,7 @@
 // Cloudflare Workers configuration. See ../DEPLOY.md.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "nitaalumini",
+  "name": "nitaalumni",
   "main": "src/worker.ts",
   "compatibility_date": "2025-09-01",
   // node:crypto, Buffer and the PostgreSQL driver need Node.js compatibility.
