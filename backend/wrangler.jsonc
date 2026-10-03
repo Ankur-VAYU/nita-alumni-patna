@@ -11,8 +11,8 @@
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      // Replace with the id printed by `npx wrangler hyperdrive create` (DEPLOY.md, step 3).
-      "id": "REPLACE_WITH_HYPERDRIVE_ID",
+      // Hyperdrive configuration "nita-alumni-db" (connects to the Neon database).
+      "id": "39e5f5a1390f4ef585940e452e501462",
       // Used only by `npm run dev:worker` on your own computer.
       "localConnectionString": "postgres://postgres:postgres@localhost:5432/nita_alumni"
     }
