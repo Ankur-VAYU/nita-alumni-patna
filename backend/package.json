@@ -17,7 +17,7 @@
     "vercel-build": "tsc -p tsconfig.json && node dist/cli.js migrate --if-production"
   },
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   },
   "license": "UNLICENSED",
   "dependencies": {
