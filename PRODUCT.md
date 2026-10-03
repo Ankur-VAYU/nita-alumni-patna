@@ -128,7 +128,7 @@ prototype v3 unless marked "Later".
 | Web app | React + TypeScript, built as a PWA | Works on any phone browser, installable |
 | Android/iOS | Wrap the same web app with Capacitor | One codebase; Play Store presence |
 | Messages | WhatsApp Business API provider for OTP and alerts, SMS fallback, email provider | Members already use WhatsApp |
-| Hosting | **Cloudflare Workers** (free plan) for the app and **Supabase** (free plan) for the PostgreSQL database, connected through Cloudflare Hyperdrive. Weekly backups taken by an admin. See `DEPLOY.md` | Chosen by the chapter: no cost to start |
+| Hosting | **Cloudflare Workers** (free plan) for the app and **Neon** (free plan) for the PostgreSQL database, connected through Cloudflare Hyperdrive. Weekly backups taken by an admin. See `DEPLOY.md` | Chosen by the chapter: no cost to start |
 
 ### 7.1 Data model (main tables)
 

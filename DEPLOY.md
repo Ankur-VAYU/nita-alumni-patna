@@ -4,18 +4,18 @@ This covers the first live part of the app: the **join form** and the **admin to
 verify member accounts. The member app screens (directory, events, board) come in the next phase
 and will use the same deployment and database.
 
-Chosen setup: **Cloudflare Workers** (free plan) runs the app, and **Supabase** (free plan) holds
-the database. Cloudflare **Hyperdrive** connects the two.
+Chosen setup: **Cloudflare Workers** (free plan) runs the app, and **Neon** (free plan) holds
+the PostgreSQL database. Cloudflare **Hyperdrive** connects the two.
 
 ```
-Member's phone ──► Cloudflare Worker "nitaalumini" ──► Hyperdrive ──► Supabase PostgreSQL
+Member's phone ──► Cloudflare Worker "nitaalumini" ──► Hyperdrive ──► Neon PostgreSQL
                    (join form, admin API)                             (all data)
-Admin's computer ── command line (npm run cli) ─────────────────────► Supabase PostgreSQL
+Admin's computer ── command line (npm run cli) ─────────────────────► Neon PostgreSQL
 ```
 
 ## 1. Where is the data saved?
 
-All data is saved in **one PostgreSQL database in your Supabase project**. Cloudflare runs the
+All data is saved in **one PostgreSQL database in your Neon project**. Cloudflare runs the
 code but stores no member data.
 
 | Data | Table | Notes |
@@ -26,34 +26,34 @@ code but stores no member data.
 | Institute batch list | `batch_records` | Used only to check registrations |
 | Who did what, and when | `audit_log` | Every registration, creation, import, approval, rejection and role change |
 
-**Region:** when creating the Supabase project, choose the region closest to members (Mumbai, if
-offered). India's Digital Personal Data Protection Act, 2023 applies to this data. Have the privacy
+**Region:** when creating the Neon project, choose the region closest to members (check the list
+Neon offers; Singapore was the nearest to India that I knew of). India's Digital Personal Data Protection Act, 2023 applies to this data. Have the privacy
 notice and any data-location question checked by someone qualified.
 
-**Supabase's automatic API is locked.** Supabase publishes tables through its own "Data API" to
-anyone holding the project's public key. The app's migration `0002_row_level_security.sql` turns
-on row-level security on every table, which blocks that API. The app itself connects as the
-database owner and is not affected. Don't turn row-level security off, and don't add policies,
-unless you mean to expose data.
+**Row-level security is on.** Migration `0002_row_level_security.sql` turns on row-level
+security for every table. That blocks any automatic data API a host may offer (Neon's optional
+Data API, for example), while the app, which connects as the database owner, is unaffected. Don't
+turn it off or add policies unless you mean to expose data.
 
 ## 2. Free-plan limits (check before relying on them)
 
 These are from my knowledge of the plans and may have changed. Check the current terms on
-cloudflare.com and supabase.com.
+cloudflare.com and neon.tech.
 
 - **Cloudflare Workers Free:** about 100,000 requests a day, and a small amount of CPU time per
   request (10 ms). I measured a registration with photo at about 3 ms of CPU, and one with a
   500 KB proof at about 7 ms. That's why proofs are limited to 500 KB and certificate photos are
   shrunk. If registrations with proofs start failing, the paid Workers plan removes this limit.
-- **Supabase Free:** a small database (around 500 MB), and **projects are paused after about a
-  week without activity**. A paused project stops the join form until someone restores it from the
-  Supabase dashboard. Watch for Supabase's emails, and keep at least one admin checking regularly.
-- **Backups:** don't count on downloadable backups from Supabase on the free plan. Take your own
+- **Neon Free:** a small amount of storage (around 0.5 GB when I last knew). That is enough for a
+  few thousand members because photos are small and proofs are deleted after review. Watch the
+  storage figure in the Neon dashboard. When nobody uses the app, Neon puts the database to sleep;
+  the next visit wakes it automatically and takes a second or two longer. No one has to restore it.
+- **Backups:** Neon's free plan keeps only a short history for restoring. Take your own backups
   (section 6).
 
 ## 3. Set up and deploy, step by step
 
-You need: a Supabase account, a Cloudflare account, and a computer with Node.js 20 or newer and
+You need: a Neon account, a Cloudflare account, and a computer with Node.js 20 or newer and
 Git. All commands run in the `backend` folder of this repository.
 
 ```bash
@@ -62,34 +62,29 @@ cd nita-alumni-patna/backend
 npm install
 ```
 
-### Step 1: Create the database (Supabase)
-1. On supabase.com create a **new project**: name `nita-alumni-patna`, a strong database password
-   (save it in a password manager), region closest to India.
-2. When it is ready, click **Connect** and copy the **Session pooler** connection string. It works
-   over normal (IPv4) internet connections. It looks like
-   `postgresql://postgres.<project-ref>:[YOUR-PASSWORD]@aws-0-<region>.pooler.supabase.com:5432/postgres`.
-   Put your database password in place of `[YOUR-PASSWORD]`.
+### Step 1: Create the database (Neon)
+1. On neon.tech create a **new project**: name `nita-alumni-patna`, PostgreSQL version as offered,
+   region closest to India.
+2. Open **Connect** (Connection details) and copy the connection string with **connection pooling
+   turned off**: the "direct" string, whose host does not contain `-pooler`. Hyperdrive does its
+   own pooling. It looks like
+   `postgresql://neondb_owner:<password>@ep-<name>.<region>.aws.neon.tech/neondb?sslmode=require`.
 
 ### Step 2: Create the tables (from your computer)
 ```bash
 cp .env.example .env
 # In .env set:
-#   DATABASE_URL=<the Session pooler string from step 1>
+#   DATABASE_URL=<the direct connection string from step 1>
 #   ADMIN_API_KEY=<a long random secret: openssl rand -hex 32>
 npm run cli -- migrate
 ```
 You should see `Applied 0001_init.sql`, `Applied 0002_row_level_security.sql`, `Database is up to date.`
-
-If you get a certificate error such as *self-signed certificate in certificate chain*, download
-Supabase's certificate (Project Settings → Database → SSL Configuration). Then add
-`?sslmode=verify-full&sslrootcert=/full/path/to/the-downloaded.crt` to the end of `DATABASE_URL`.
-I could not test against Supabase from where this was built, so tell me the exact error if this
-does not fix it.
+I could not test against Neon from where this was built. If this step fails, send me the exact error.
 
 ### Step 3: Connect Cloudflare to the database (Hyperdrive)
 ```bash
 npx wrangler login                       # opens the browser to sign in to Cloudflare
-npx wrangler hyperdrive create nita-alumni-db --connection-string="<the Session pooler string>"
+npx wrangler hyperdrive create nita-alumni-db --connection-string="<the direct connection string>"
 ```
 Copy the `id` it prints into `backend/wrangler.jsonc`, replacing `REPLACE_WITH_HYPERDRIVE_ID`, then
 commit and push that change. The id is not a secret. The database password is stored inside
@@ -118,12 +113,13 @@ Database changes are still applied by running `npm run cli -- migrate` from your
 deploying code that needs them.
 
 ### Step 6: Remove the Vercel project
-The repository no longer contains Vercel settings. Delete the `nitaalumini` project on Vercel, and
-any Neon database you created there, so it stops building on every push.
+The repository no longer contains Vercel settings. Delete the `nitaalumini` project on Vercel so it
+stops building on every push. If you created a Neon database through Vercel, you can reuse it
+instead of making a new one in step 1, or delete it.
 
 ## 4. Creating accounts from the backend
 
-Admin commands run **from an admin's own computer** and connect straight to Supabase using
+Admin commands run **from an admin's own computer** and connect straight to Neon using
 `DATABASE_URL` in `backend/.env`. That file holds the key to all member data: keep it only on
 admins' own computers and never commit it.
 
@@ -190,7 +186,7 @@ To see a proof document before deciding:
 ## 6. Backups
 
 Weekly, from an admin's computer (needs PostgreSQL client tools with `pg_dump` at the same or a
-newer major version than Supabase's database):
+newer major version than the Neon database):
 ```bash
 scripts/backup-remote.sh            # reads DATABASE_URL from .env, writes backups/…sql.gz
 ```
@@ -201,7 +197,7 @@ a new empty database: `gunzip -c backups/<file>.sql.gz | psql "<new database URL
 
 - `ADMIN_API_KEY` is long and random, known only to admins, and changed when someone leaves the committee (`npx wrangler secret put ADMIN_API_KEY` and each admin's `.env`).
 - `.env` and `.dev.vars` files are never committed (both are in `.gitignore`).
-- Row-level security is on for every table (Supabase dashboard → Table Editor shows "RLS enabled").
+- Row-level security is on for every table (the migration does this; `npm run cli -- migrate` shows it applied).
 - Backups are taken and stored away from the admin's computer; a restore has been tested once.
 - The privacy notice on the form has been reviewed.
 - Optional, with your own domain on Cloudflare: add a WAF rate-limiting rule for `/api/v1/join`. The app's own limit counts per Cloudflare instance, so it is weaker.
