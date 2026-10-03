@@ -17,6 +17,10 @@ describe('join form page', () => {
     expect(res.body).not.toContain('{{');
     expect(res.headers['content-security-policy']).toContain("script-src 'self'");
     expect((await t.inject('/')).headers.location).toBe('/join');
+    const privacy = await t.inject('/privacy');
+    expect(privacy.statusCode).toBe(200);
+    expect(privacy.body).toContain('Proof documents are deleted');
+    expect(res.body).toContain('href="/privacy"');
   });
 });
 

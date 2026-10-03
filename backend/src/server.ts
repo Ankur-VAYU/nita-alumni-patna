@@ -26,6 +26,7 @@ app.route(
     adminKey: config.ADMIN_API_KEY,
     google: config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET ? { clientId: config.GOOGLE_CLIENT_ID, clientSecret: config.GOOGLE_CLIENT_SECRET } : undefined,
     sessionSecret: config.SESSION_SECRET,
+    contactEmail: config.CONTACT_EMAIL,
     openDb: async () => ({ db, release: async () => {} }),
   }),
 );

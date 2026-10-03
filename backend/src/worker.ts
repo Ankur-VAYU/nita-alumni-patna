@@ -12,6 +12,7 @@ interface Env {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   SESSION_SECRET?: string;
+  CONTACT_EMAIL?: string;
 }
 
 let app: ReturnType<typeof createHttpApp> | undefined;
@@ -51,6 +52,7 @@ export default {
       adminKey: env.ADMIN_API_KEY,
       google: env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } : undefined,
       sessionSecret: env.SESSION_SECRET,
+      contactEmail: env.CONTACT_EMAIL,
       openDb: () => connectOnce(env.HYPERDRIVE.connectionString),
     });
     return app.fetch(request, env, ctx as never);

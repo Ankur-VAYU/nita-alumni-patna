@@ -52,6 +52,7 @@ input[type="file"] { padding: 8px; }
 .done { text-align: center; display: grid; gap: 14px; justify-items: center; }
 .done p { max-width: 52ch; color: var(--muted); }
 footer { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 0 16px 32px; }
+footer a { color: var(--muted); }
 [hidden] { display: none !important; }
 @media (max-width: 640px) {
   .hero { padding: 28px 16px 64px; }

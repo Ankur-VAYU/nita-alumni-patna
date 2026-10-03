@@ -23,6 +23,7 @@ ${opts.script ? `<script src="${opts.script}" defer></script>` : ''}
   ${u ? `<nav class="who"><span>${esc(u.name)}${u.role !== 'member' ? ` <em class="pill">${esc(u.role)}</em>` : ''}</span>${u.role === 'admin' || u.role === 'moderator' ? '<a href="/admin">Admin</a>' : ''}<a href="/me">My profile</a><a href="/logout">Sign out</a></nav>` : ''}
 </header>
 <main class="page">${body}</main>
+<footer class="foot"><a href="/privacy">Privacy notice</a> · <a href="/join">Join</a> · <a href="/login">Sign in</a></footer>
 </body>
 </html>`;
 }
@@ -95,4 +96,52 @@ export function adminPage(user: { name: string; role: string }) {
   <h1>Admin</h1>
   <p class="muted">Loading…</p>
 </div>`, { user, script: '/admin.js' });
+}
+
+export function privacyPage(contactEmail: string | undefined) {
+  const contact = contactEmail
+    ? `email <a href="mailto:${esc(contactEmail)}">${esc(contactEmail)}</a>`
+    : 'contact any member of the chapter committee';
+  return layout('Privacy notice', `
+<article class="card prose">
+  <h1>Privacy notice</h1>
+  <p class="muted">NIT Agartala Alumni · Patna Chapter</p>
+
+  <h2>Who we are</h2>
+  <p>This website is run by volunteers of the Patna Chapter of NIT Agartala alumni, for alumni whose home is in Bihar. It is not run by the institute.</p>
+
+  <h2>What we collect</h2>
+  <ul>
+    <li>What you enter on the join form: name, mobile number, email, roll number, degree, branch, batch, current position and organisation, work city and state, home district, and optionally LinkedIn, skills, a photo and the name of someone who can vouch for you.</li>
+    <li>A proof document (degree, provisional certificate or institute ID), if you upload one.</li>
+    <li>When you sign in with Google: your name and email address only. We do not see your Google password or anything else in your Google account.</li>
+    <li>A record of actions by chapter admins (who approved or changed what, and when).</li>
+  </ul>
+
+  <h2>Why we collect it</h2>
+  <ul>
+    <li>To check that you are an alumnus, using the institute's list of graduates.</li>
+    <li>To let verified members find and contact each other, and to organise chapter events.</li>
+  </ul>
+
+  <h2>Who can see it</h2>
+  <ul>
+    <li>People who are not signed-in, verified members see nothing about you.</li>
+    <li>Verified members can see your name, photo, batch, branch, position, organisation and districts. Your phone number and email are shown according to the privacy choices you make (all members, only your batchmates, or only admins).</li>
+    <li>Chapter admins and moderators can see everything you submitted, including the proof document, in order to verify you.</li>
+    <li>We do not sell your data or share it with advertisers.</li>
+  </ul>
+
+  <h2>Where it is stored and for how long</h2>
+  <ul>
+    <li>The website runs on Cloudflare and the data is stored in a PostgreSQL database hosted by Neon.</li>
+    <li>Proof documents are deleted as soon as your registration is approved or rejected.</li>
+    <li>Your profile is kept while you are a member. If you ask us to delete it, we remove it.</li>
+  </ul>
+
+  <h2>Your choices</h2>
+  <p>You can ask to see, correct or delete your data at any time: ${contact}.</p>
+
+  <p class="muted small">Last updated: ${new Date().getFullYear()}.</p>
+</article>`);
 }

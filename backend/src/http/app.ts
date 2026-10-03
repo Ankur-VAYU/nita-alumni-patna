@@ -14,7 +14,7 @@ import {
   approveMember, createByAdmin, exportMembersCsv, getFile, getMember, importBatchList, importMembers,
   findMemberByEmail, getSessionMember, listAudit, listMembers, recordSignIn, registerFromForm, rejectMember, setRole, setStatus,
 } from '../members/service.js';
-import { adminPage, loginPage, mePage } from './pages.js';
+import { adminPage, loginPage, mePage, privacyPage } from './pages.js';
 import joinTemplate from './join-template.js';
 
 export interface DbSession {
@@ -31,6 +31,8 @@ export interface HttpOptions {
   google?: GoogleConfig;
   /** Secret for signing session cookies. Defaults to one derived from the admin key. */
   sessionSecret?: string;
+  /** Shown on the privacy notice as the address for data requests. */
+  contactEmail?: string;
   /** For tests: replaces the call to Google's token endpoint. */
   fetch?: typeof fetch;
 }
@@ -249,6 +251,12 @@ export function createHttpApp(opts: HttpOptions) {
     c.header('content-security-policy', FORM_CSP);
     c.header('cache-control', 'no-store');
   };
+
+  app.get('/privacy', (c) => {
+    c.header('content-security-policy', FORM_CSP);
+    c.header('cache-control', 'public, max-age=3600');
+    return c.html(privacyPage(opts.contactEmail));
+  });
 
   app.get('/login', (c) => {
     pageHeaders(c);

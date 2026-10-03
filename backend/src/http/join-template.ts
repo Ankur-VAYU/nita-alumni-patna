@@ -85,7 +85,7 @@ export default `<!doctype html>
 
     <div class="hp" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
 
-    <label class="check consent"><input type="checkbox" id="consent" name="consent" required> I confirm these details are true and agree that they are shown to verified members according to my privacy settings.</label>
+    <label class="check consent"><input type="checkbox" id="consent" name="consent" required> I confirm these details are true and agree that they are shown to verified members according to my privacy settings, as described in the <a href=\"/privacy\" target=\"_blank\">privacy notice</a>.</label>
     <small class="err" data-for="consent"></small>
 
     <div class="actions"><button class="btn" id="submitBtn" type="submit">Submit registration</button></div>
@@ -98,7 +98,7 @@ export default `<!doctype html>
   </section>
 </main>
 
-<footer><p>NIT Agartala Alumni · Patna Chapter</p></footer>
+<footer><p>NIT Agartala Alumni · Patna Chapter · <a href="/privacy">Privacy notice</a> · <a href="/login">Sign in</a></p></footer>
 </body>
 </html>
 `;

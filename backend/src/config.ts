@@ -13,6 +13,8 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   // Signs session cookies. Optional: derived from ADMIN_API_KEY when not set.
   SESSION_SECRET: z.string().min(32).optional(),
+  // Shown on the privacy notice for data requests (optional).
+  CONTACT_EMAIL: z.string().optional(),
   // Set to true when running behind a reverse proxy or load balancer (most hosts).
 });
 
