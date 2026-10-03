@@ -15,7 +15,9 @@
     "db:migrate": "tsx src/cli.ts migrate",
     "cli": "tsx src/cli.ts",
     "dev:worker": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "set-db": "node scripts/set-database-url.mjs",
+    "show-env": "node scripts/show-env.mjs"
   },
   "engines": {
     "node": "22.x"
