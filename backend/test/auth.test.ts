@@ -207,7 +207,9 @@ describe('member area', () => {
   });
 
   it('serves the member pages only to signed-in members', async () => {
-    expect((await t.inject('/')).headers.location).toBe('/join');
+    const welcome = await t.inject('/');
+    expect(welcome.statusCode).toBe(200);
+    expect(welcome.body).toContain('Join the chapter');
     expect((await t.inject('/alumni')).headers.location).toBe('/login?m=need');
     expect((await t.inject('/api/v1/members')).statusCode).toBe(401);
     await add({ name: 'Me Myself', phone: '9000000005', email: 'me@example.com' });

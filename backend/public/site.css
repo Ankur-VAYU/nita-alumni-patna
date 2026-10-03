@@ -1,6 +1,7 @@
 /* NITA Alumni Patna: the app shell and components from the agreed prototype (ui-prototype/index.html).
    Navy sidebar on wide screens, bottom tab bar on phones; one content column of cards and lists.
-   Deep navy and antique gold, a serif for headings, a clean sans for reading. */
+   Deep navy and antique gold, a serif for headings, a clean sans for reading.
+   Always the light theme, as approved, even when the device is in dark mode. */
 :root {
   --bg: #f4f6fb; --surface: #ffffff; --sunk: #edf0f7; --ink: #0f1a3a; --muted: #5a6483; --line: #dde2ee;
   --accent: #1b2e6b; --accent-ink: #ffffff; --accent-soft: #e6eaf6;
@@ -16,17 +17,6 @@
   --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
   --radius: 12px;
   color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0b1126; --surface: #121b36; --sunk: #0e1630; --ink: #e9ecf6; --muted: #9ba5c5; --line: #25304f;
-    --accent: #d4af5a; --accent-ink: #111a33; --accent-soft: #2a2616; --gold-text: #dcbb6c; --gold-soft: #2a2414; --gold-line: #5a4a24;
-    --event: #e2be6e; --event-soft: #2a2414;
-    --ok: #7cc786; --ok-soft: #1a3522; --warn: #e6b450; --warn-soft: #3a2d0e; --bad: #f08a82; --bad-soft: #43201d;
-    --info: #a9bcf5; --info-soft: #1c2748; --scrim: rgb(0 0 0 / 0.65); --shadow: 0 1px 0 rgb(0 0 0 / 0.25);
-    --side-bg: #070c1c; --hero-bg: #0f1d4a;
-    color-scheme: dark;
-  }
 }
 * { box-sizing: border-box; }
 html, body { min-height: 100%; }
@@ -152,6 +142,13 @@ a.linkbtn:hover { text-decoration: underline; }
 .hero-guest h1 { font-size: 2.1rem; }
 .hero-guest p { opacity: 0.9; }
 .hero-guest img { width: 140px; height: 140px; }
+.hero-guest .hero-copy { display: grid; gap: 16px; min-width: 0; }
+.hero-guest h1 em { font-style: italic; color: var(--gold); font-weight: 500; }
+.hero-guest .btn { background: var(--gold); color: #13245a; }
+.hero-guest .btn.ghost { background: transparent; color: var(--hero-ink); border-color: rgb(243 241 234 / 0.5); }
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; counter-reset: s; }
+.step { display: grid; gap: 4px; align-content: start; }
+.step::before { counter-increment: s; content: counter(s); width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--gold); color: var(--gold-text); display: grid; place-items: center; font: 600 1rem var(--display); margin-bottom: 6px; }
 
 /* Events */
 .event { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: start; }
@@ -225,6 +222,12 @@ textarea { min-height: 96px; resize: vertical; }
 .err { color: var(--bad); font-size: 0.82rem; font-weight: 600; }
 .err:empty { display: none; }
 .photo-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.photo-preview { background: var(--accent-soft) center / cover no-repeat; }
+fieldset { border: 0; padding: 0; margin: 0; display: contents; }
+legend { grid-column: 1 / -1; font: 700 0.75rem var(--body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding-top: 8px; }
+.opt { font-weight: 400; }
+[aria-invalid="true"] { border-color: var(--bad); }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 .rules { background: var(--sunk); border-radius: 8px; padding: 10px 14px; font-size: 0.85rem; color: var(--muted); }
 .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
 .toolbar .grow { flex: 1 1 240px; }
@@ -287,6 +290,7 @@ textarea { min-height: 96px; resize: vertical; }
   .bar { grid-template-columns: 100px minmax(0, 1fr) 24px; }
   .hero-guest { padding: 24px; grid-template-columns: minmax(0, 1fr); }
   .hero-guest img { width: 88px; height: 88px; order: -1; }
+  .steps { grid-template-columns: minmax(0, 1fr); }
   .item.wide { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: no-preference) {

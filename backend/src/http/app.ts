@@ -13,18 +13,17 @@ import { adminCreateInput, directoryQuery, fieldErrors, joinInput, profileUpdate
 import {
   approveMember, createByAdmin, exportMembersCsv, getFile, getMember, importBatchList, importMembers,
   chapterStats, directorySummary, findMemberByEmail, getDirectoryPhoto, getSessionMember, listAudit, listDirectory, listMembers, recordSignIn, registerFromForm,
-  rejectMember, setRole, setStatus, updateOwnProfile, profileCompleteness,
+  rejectMember, setRole, setStatus, updateOwnProfile, profileCompleteness, committee,
 } from '../members/service.js';
-import { adminPage, alumniPage, boardPage, eventsPage, homePage, loginPage, mePage, newsPage, privacyPage, type NavUser } from './pages.js';
+import { adminPage, alumniPage, boardPage, eventsPage, homePage, joinPage, loginPage, mePage, newsPage, privacyPage, visitorHomePage, type NavUser } from './pages.js';
 import { newsInput, newsQuery } from '../news/schemas.js';
 import { createNews, deleteNews, listNews, newsHighlights, updateNews } from '../news/service.js';
 import { adminOverview, batchListInfo } from '../admin/overview.js';
 import { eventInput, postInput, postListQuery, postStatusInput, reportInput, rsvpInput } from '../community/schemas.js';
 import {
   attendees, cancelRsvp, createEvent, createPost, dismissReports, eventPayments, homeHighlights, interestedIn, listEvents,
-  listPosts, listReports, recordPayment, removePost, reportPost, rsvp, setEventStatus, setPostStatus, staffBadge, toggleInterest, updateEvent,
+  listPosts, listReports, publicEvents, recordPayment, removePost, reportPost, rsvp, setEventStatus, setPostStatus, staffBadge, toggleInterest, updateEvent,
 } from '../community/service.js';
-import joinTemplate from './join-template.js';
 
 export interface DbSession {
   db: Db;
@@ -85,18 +84,10 @@ const FORM_CSP = [
   "base-uri 'none'",
 ].join('; ');
 
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const options = (list: readonly (string | number)[]) => list.map((v) => `<option value="${esc(String(v))}">${esc(String(v))}</option>`).join('');
-
 function renderJoinPage() {
   const years: number[] = [];
   for (let y = new Date().getFullYear(); y >= FIRST_BATCH_YEAR; y--) years.push(y);
-  return joinTemplate
-    .replace('{{DEGREES}}', options(DEGREES))
-    .replace('{{BRANCHES}}', options(BRANCHES))
-    .replace('{{YEARS}}', options(years))
-    .replace('{{DISTRICTS}}', options(BIHAR_DISTRICTS))
-    .replace('{{STATES}}', options(WORK_STATES));
+  return joinPage({ degrees: DEGREES, branches: BRANCHES, years, districts: BIHAR_DISTRICTS, states: WORK_STATES });
 }
 
 /** Small fixed-window limiter. Per server instance: on Cloudflare add a WAF rate-limit rule as well. */
@@ -329,7 +320,20 @@ export function createHttpApp(opts: HttpOptions) {
     return toLogin(c, 'signed_out');
   });
 
-  app.get('/', withDb, async (c) => c.redirect((await currentActor(c)) ? '/home' : '/join'));
+  // Signed-in people go to their home page; visitors see the welcome page from the prototype.
+  app.get('/', withDb, async (c) => {
+    if (await currentActor(c)) return c.redirect('/home');
+    pageHeaders(c);
+    const upcoming = (await publicEvents(c.var.db)).find((e) => !e.past) ?? null;
+    return c.html(visitorHomePage({
+      nextEvent: upcoming,
+      institute: await listNews(c.var.db, { kind: 'institute', limit: 4 }),
+      committee: await committee(c.var.db),
+    }));
+  });
+
+  // Event details for visitors: no names, no contact details.
+  app.get('/api/v1/public/events', withDb, async (c) => c.json(await publicEvents(c.var.db)));
 
   /** What the sidebar shows: the person, and for staff the number of things waiting for them. */
   async function navFor(c: Context<Env>, who: Actor): Promise<NavUser> {
@@ -359,6 +363,10 @@ export function createHttpApp(opts: HttpOptions) {
   });
 
   app.get('/events', withDb, async (c) => {
+    if (!(await currentActor(c))) {
+      pageHeaders(c);
+      return c.html(eventsPage(null));
+    }
     const r = await memberPage(c);
     return r.redirect ?? c.html(eventsPage(r.nav));
   });

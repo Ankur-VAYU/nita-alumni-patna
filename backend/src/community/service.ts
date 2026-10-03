@@ -376,3 +376,20 @@ export async function staffBadge(db: Db) {
     .where(and(eq(postReports.status, 'open'), ne(posts.status, 'removed')));
   return n + r;
 }
+
+/**
+ * Events for visitors who are not signed in: details and places left only, never who is going.
+ * Upcoming first, then up to three recent past events.
+ */
+export async function publicEvents(db: Db) {
+  const list = await db.select(EVENT_COLUMNS).from(events).where(eq(events.status, 'published')).orderBy(desc(events.startsAt)).limit(30);
+  const counts = await headcounts(db, list.map((e) => e.id));
+  const now = Date.now();
+  const rows = list.map(({ createdAt: _c, status: _s, ...e }) => {
+    const people = counts.get(e.id)?.people ?? 0;
+    return { ...e, past: (e.endsAt ?? e.startsAt).getTime() < now, people, placesLeft: e.capacity ? Math.max(0, e.capacity - people) : null };
+  });
+  const up = rows.filter((e) => !e.past).sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  const past = rows.filter((e) => e.past).slice(0, 3);
+  return [...up, ...past];
+}

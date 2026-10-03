@@ -1,4 +1,4 @@
-// Cloudflare Workers entry. Static files (join.css, join.js, emblem.svg, robots.txt) are served
+// Cloudflare Workers entry. Static files (site.css, the page scripts, emblem.svg, robots.txt) are served
 // by Cloudflare from public/ before this code runs; everything else comes here.
 // The database is reached through Hyperdrive, which keeps connections to the Neon database warm.
 import pg from 'pg';

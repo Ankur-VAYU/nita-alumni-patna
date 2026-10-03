@@ -11,7 +11,7 @@ export interface NavUser {
   /** Registrations waiting plus reported posts, shown on the Admin link for staff. */
   badge?: number;
 }
-type Page = 'home' | 'events' | 'alumni' | 'board' | 'profile' | 'admin' | 'join' | 'signin' | 'other';
+type Page = 'home' | 'events' | 'alumni' | 'board' | 'profile' | 'admin' | 'signin' | 'other';
 
 const ICONS: Record<string, string> = {
   home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
@@ -21,12 +21,11 @@ const ICONS: Record<string, string> = {
   profile: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.2 4.1-6.5 8-6.5s7 2.3 8 6.5"/>',
   admin: '<path d="M12 3l8 3v6c0 4.5-3.3 8.3-8 9-4.7-.7-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
   signin: '<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l4-4-4-4M14 12H4"/>',
-  join: '<circle cx="10" cy="8" r="4"/><path d="M3 21c1-4.2 3.6-6.5 7-6.5 1.4 0 2.7.4 3.8 1.1M18 14v6M15 17h6"/>',
 };
 const icon = (k: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>`;
 
 function navItems(u: NavUser | null | undefined): [Page, string, string, string][] {
-  if (!u) return [['join', 'Join', '/join', 'Join'], ['signin', 'Sign in', '/login', 'Sign in']];
+  if (!u) return [['home', 'Home', '/', 'Home'], ['events', 'Events', '/events', 'Events'], ['signin', 'Sign in', '/login', 'Sign in']];
   if (!u.member) return [['admin', 'Admin', '/admin', 'Admin']];
   const items: [Page, string, string, string][] = [
     ['home', 'Home', '/home', 'Home'], ['events', 'Events', '/events', 'Events'], ['alumni', 'Alumni', '/alumni', 'Alumni'],
@@ -42,7 +41,7 @@ function layout(title: string, body: string, opts: { user?: NavUser | null; acti
   const cur = (k: Page) => (opts.active === k ? ' aria-current="page"' : '');
   const badge = (k: Page, dot: boolean) => (k === 'admin' && u?.badge ? (dot ? '<span class="dot"></span>' : `<span class="count">${u.badge}</span>`) : '');
   const role = u && u.role !== 'member' ? `<em class="pill">${esc(u.role)}</em>` : '';
-  const brand = (size: number) => `<a class="brand" href="${u ? (u.member ? '/home' : '/admin') : '/join'}"><img src="/emblem.svg" alt="" width="${size}" height="${size}"><span><b>NITA Alumni</b><small>Patna Chapter</small></span></a>`;
+  const brand = (size: number) => `<a class="brand" href="${u ? (u.member ? '/home' : '/admin') : '/'}"><img src="/emblem.svg" alt="" width="${size}" height="${size}"><span><b>NITA Alumni</b><small>Patna Chapter</small></span></a>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -60,7 +59,7 @@ ${opts.script ? `<script src="/common.js" defer></script><script src="${opts.scr
 <div class="shell">
   <aside class="side">
     ${brand(44)}
-    <nav class="nav" aria-label="Main">${items.map(([k, label, href]) => `<a href="${href}"${cur(k)}>${icon(k === 'join' ? 'join' : k)}${esc(label)}${badge(k, false)}</a>`).join('')}</nav>
+    <nav class="nav" aria-label="Main">${items.map(([k, label, href]) => `<a href="${href}"${cur(k)}>${icon(k)}${esc(label)}${badge(k, false)}</a>`).join('')}</nav>
     <div class="side-foot">
       ${u ? `<span><b>${esc(u.name)}</b>${role}</span><a href="/logout">Sign out</a>` : '<span>For NIT Agartala alumni from Bihar</span>'}
       <a href="/privacy">Privacy notice</a>
@@ -172,7 +171,7 @@ ${top('Privacy notice', 'NIT Agartala Alumni · Patna Chapter')}
 
   <h2>Who can see it</h2>
   <ul>
-    <li>People who are not signed-in, verified members see nothing about you.</li>
+    <li>People who are not signed-in, verified members see nothing about you. The one exception is the chapter committee: the name, committee title, branch and batch of committee members (for example the President and Secretary) are shown on the public welcome page.</li>
     <li>Verified members can see your name, photo, batch, branch, position, organisation and districts. Your phone number and email are shown according to the privacy choices you make (all members, only your batchmates, or only admins).</li>
     <li>Chapter admins and moderators can see everything you submitted, including the proof document, in order to verify you.</li>
     <li>We do not sell your data or share it with advertisers.</li>
@@ -276,8 +275,108 @@ export function alumniPage(user: NavUser) {
   return layout('Alumni', `<div id="directory">${top('Alumni directory', 'Loading…')}</div>`, { user, active: 'alumni', script: '/directory.js' });
 }
 
-export function eventsPage(user: NavUser) {
-  return layout('Events', `<div id="events" data-role="${esc(user.role)}">${top('Events', 'Alumni meets and chapter activities. Places count you and your guests.')}<p class="muted">Loading…</p></div>`, { user, active: 'events', script: '/events.js' });
+/** Events: members RSVP; visitors (user null) see the details and places left, and sign in to RSVP. */
+export function eventsPage(user: NavUser | null) {
+  const attrs = user ? `data-role="${esc(user.role)}"` : 'data-guest="1"';
+  return layout('Events', `<div id="events" ${attrs}>${top('Events', 'Alumni meets and chapter activities. Places count you and your guests.')}<p class="muted">Loading…</p></div>`, { user, active: 'events', script: '/events.js' });
+}
+
+interface PublicHighlights {
+  nextEvent: { title: string; startsAt: Date; venue: string; feePaise: number; feeBasis: string; capacity: number | null; people: number } | null;
+  institute: NewsItem[];
+  committee: { name: string; title: string | null; branch: string; batch: number }[];
+}
+
+const initialsOf = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
+
+/** The welcome page for visitors who are not signed in, as in the prototype. */
+export function visitorHomePage(hl: PublicHighlights) {
+  const e = hl.nextEvent;
+  let eventCard = '';
+  if (e) {
+    const d = istParts(e.startsAt);
+    eventCard = `<div class="card hero-event"><div class="datebox"><b>${d.day}</b><span>${esc(d.month)}</span></div>
+  <div class="section" style="gap:6px"><div class="eyebrow">Next event</div><h2>${esc(e.title)}</h2>
+  <p class="muted">${esc(fmtTime(e.startsAt))} · ${esc(e.venue)} · ${e.feePaise ? `${rupees(e.feePaise)} per ${esc(e.feeBasis)}` : 'Free'}</p>
+  <div class="row"><a class="btn" href="/login">Sign in to RSVP</a><span class="muted">${e.people}${e.capacity ? ` of ${e.capacity}` : ''} places taken</span></div></div></div>`;
+  }
+  const committeeSection = hl.committee.length ? `<section class="section"><h2>Chapter committee</h2>
+  <div class="card list">${hl.committee.map((m) => `<div class="item" style="align-items:center"><div class="avatar sm">${esc(initialsOf(m.name))}</div><div><b>${esc(m.name)}</b><div class="muted">${esc(m.title)} · ${esc(m.branch)} ${m.batch}</div></div></div>`).join('')}</div>
+  <p class="hint">Questions about joining? Contact any committee member at the next meet or through the institute alumni office.</p></section>` : '';
+  return layout('Welcome', `
+<div class="hero-guest"><div class="hero-copy"><div class="eyebrow">NIT Agartala alumni · Patna Chapter</div>
+  <h1>NIT Agartala alumni from Bihar, <em>wherever they work.</em></h1>
+  <p>Find batchmates from your district, attend chapter meets in Patna, and help each other with jobs, referrals and mentoring across India. Every member is verified by the chapter committee.</p>
+  <div class="row"><a class="btn" href="/join">Join the chapter</a><a class="btn ghost" href="/login">I already have an account</a></div></div>
+  <img src="/emblem.svg" alt="" width="140" height="140"></div>
+<section class="section"><h2>How joining works</h2><div class="steps">
+  <div class="card step"><h3>Fill in the join form</h3><p class="muted">Add your batch, branch, roll number, your home district in Bihar and where you work now.</p></div>
+  <div class="card step"><h3>We check the batch list</h3><p class="muted">We match your roll number with the institute batch list. A degree or ID upload helps if it does not match.</p></div>
+  <div class="card step"><h3>Get verified, then sign in with Google</h3><p class="muted">The committee checks your details, usually within 2 working days.</p></div>
+</div></section>
+${eventCard}
+${committeeSection ? `<div class="grid2">${updatesSection(hl.institute, false)}${committeeSection}</div>` : updatesSection(hl.institute, false)}`, { user: null, active: 'home' });
+}
+
+export interface JoinLists { degrees: readonly string[]; branches: readonly string[]; years: readonly number[]; districts: readonly string[]; states: readonly string[] }
+
+/** The join form inside the app shell. join.js handles the photo, proof and submit. */
+export function joinPage(l: JoinLists) {
+  const opts = (list: readonly (string | number)[]) => list.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  const vis = '<option value="members">All verified alumni</option><option value="batch">Only my batchmates</option><option value="admins">Only chapter admins</option>';
+  const err = (n: string) => `<small class="err" data-for="${n}"></small>`;
+  return layout('Join', `
+${top('Join the chapter', "For NIT Agartala alumni whose home is in Bihar, wherever they work now. The committee checks every registration against the institute's batch list. Already a member? <a href=\"/login\">Sign in</a>")}
+<form id="joinForm" class="card form" novalidate>
+  <p class="note bad full" id="formError" role="alert" hidden></p>
+  <fieldset><legend>About you</legend>
+    <div class="field full"><label for="name">Full name (as on degree)</label><input id="name" name="name" autocomplete="name" required maxlength="120">${err('name')}</div>
+    <div class="field"><label for="phone">Mobile number (WhatsApp)</label><input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel" required placeholder="10-digit number"><span class="hint">For WhatsApp messages from the chapter and fellow alumni.</span>${err('phone')}</div>
+    <div class="field"><label for="email">Email (Google account)</label><input id="email" name="email" type="email" autocomplete="email" required><span class="hint">You will sign in with Google using this address.</span>${err('email')}</div>
+  </fieldset>
+  <fieldset><legend>At NIT Agartala</legend>
+    <div class="field"><label for="rollNo">Roll / enrolment number</label><input id="rollNo" name="rollNo" required maxlength="32" autocapitalize="characters"><span class="hint">Used to match you with the institute batch list.</span>${err('rollNo')}</div>
+    <div class="field"><label for="degree">Degree</label><select id="degree" name="degree" required><option value="">Select</option>${opts(l.degrees)}</select>${err('degree')}</div>
+    <div class="field"><label for="batch">Batch (passing year)</label><select id="batch" name="batch" required><option value="">Select</option>${opts(l.years)}</select>${err('batch')}</div>
+    <div class="field"><label for="branch">Branch / department</label><select id="branch" name="branch" required><option value="">Select</option>${opts(l.branches)}</select>${err('branch')}</div>
+  </fieldset>
+  <fieldset><legend>Work</legend>
+    <div class="field"><label for="position">Current position</label><input id="position" name="position" required maxlength="120" autocomplete="organization-title">${err('position')}</div>
+    <div class="field"><label for="organisation">Current organisation</label><input id="organisation" name="organisation" required maxlength="160" autocomplete="organization">${err('organisation')}</div>
+    <div class="field"><label for="workDistrict">Work city / district</label><input id="workDistrict" name="workDistrict" required maxlength="80">${err('workDistrict')}</div>
+    <div class="field"><label for="workState">Working state (or outside India)</label><select id="workState" name="workState" required><option value="">Select</option>${opts(l.states)}</select>${err('workState')}</div>
+  </fieldset>
+  <fieldset><legend>Home in Bihar</legend>
+    <div class="field"><label for="homeDistrict">Home district</label><select id="homeDistrict" name="homeDistrict" required><option value="">Select</option>${opts(l.districts)}</select>${err('homeDistrict')}</div>
+    <div class="field"><label for="homeState">Home state</label><input id="homeState" value="Bihar" readonly></div>
+  </fieldset>
+  <fieldset><legend>Help fellow alumni find you</legend>
+    <div class="field"><label for="linkedin">LinkedIn profile link <span class="opt">(optional)</span></label><input id="linkedin" name="linkedin" type="url" placeholder="https://www.linkedin.com/in/...">${err('linkedin')}</div>
+    <div class="field"><label for="skills">Skills or expertise <span class="opt">(optional)</span></label><input id="skills" name="skills" maxlength="300">${err('skills')}</div>
+    <label class="check full"><input type="checkbox" id="openToMentor" name="openToMentor"> <span>I am open to mentoring students and junior alumni</span></label>
+  </fieldset>
+  <fieldset><legend>Photo and proof</legend>
+    <div class="field full"><div class="photo-row"><div class="avatar lg photo-preview" id="photoPreview" aria-hidden="true"></div>
+      <div class="field"><label for="photo">Profile photo <span class="opt">(recommended)</span></label><input id="photo" type="file" accept="image/jpeg,image/png,image/webp"><span class="hint">A clear face photo. It is resized before upload.</span>${err('photo')}</div></div></div>
+    <div class="field full"><label for="proof">Degree, provisional certificate or institute ID <span class="opt">(recommended)</span></label><input id="proof" type="file" accept="image/jpeg,image/png,application/pdf"><span class="hint">A photo of the certificate (JPG or PNG, shrunk automatically) or a PDF under 500 KB. Seen only by chapter admins, needed if your roll number does not match the batch list, and deleted once your registration is decided.</span>${err('proof')}</div>
+    <div class="field full"><label for="vouchedBy">A verified alumnus who knows you <span class="opt">(optional)</span></label><input id="vouchedBy" name="vouchedBy" maxlength="160" placeholder="Name and batch, e.g. Priya Sinha, 2015">${err('vouchedBy')}</div>
+  </fieldset>
+  <fieldset><legend>Privacy</legend>
+    <div class="field"><label for="phoneVisibility">Who can see my phone number</label><select id="phoneVisibility" name="phoneVisibility">${vis}</select></div>
+    <div class="field"><label for="emailVisibility">Who can see my email</label><select id="emailVisibility" name="emailVisibility">${vis}</select></div>
+    <p class="hint full">Your name, photo, batch, branch, position, organisation and districts are visible to verified alumni only. People who are not members see nothing.</p>
+  </fieldset>
+  <div class="hp" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+  <label class="check full"><input type="checkbox" id="consent" name="consent" required> <span>I confirm these details are true and agree that they are shown to verified members according to my privacy settings, as described in the <a href="/privacy" target="_blank">privacy notice</a>.</span></label>
+  <small class="err full" data-for="consent"></small>
+  <div class="form-actions"><button class="btn" id="submitBtn" type="submit">Submit registration</button></div>
+</form>
+<section id="done" class="card center" hidden tabindex="-1">
+  <img src="/emblem.svg" alt="" width="72" height="72">
+  <h2>Thank you, <span id="doneName"></span></h2>
+  <p class="muted">Your registration has reached the chapter committee. We check it against the institute batch list, usually within 2 working days. Once you are verified, sign in with Google using the email you entered.</p>
+  <a class="btn ghost" href="/">Back to the welcome page</a>
+</section>`, { user: null, active: 'home', script: '/join.js' });
 }
 
 export function boardPage(user: NavUser) {

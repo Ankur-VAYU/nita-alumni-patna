@@ -4,7 +4,7 @@ import type { Db } from '../db/index.js';
 import { auditLog, batchRecords, members, type Member, type NewMember } from '../db/schema.js';
 import { badRequest, conflict, notFound, uniqueViolation } from '../lib/errors.js';
 import { normalizePhone } from '../lib/phone.js';
-import { BRANCHES, DEGREES, matchOption } from '../lib/reference.js';
+import { BRANCHES, DEGREES, TITLES, matchOption } from '../lib/reference.js';
 import { parseBatchCsv, parseMemberCsv } from './csv.js';
 import { adminCreateInput, fieldErrors, type AdminCreateInput, type JoinInput, type MemberFields, type ProfileUpdateInput } from './schemas.js';
 
@@ -624,4 +624,18 @@ export function profileCompleteness(m: {
   ];
   const missing = fields.filter(([v]) => !v).map(([, label]) => label);
   return { pct: Math.round(((fields.length - missing.length) / fields.length) * 100), missing };
+}
+
+/**
+ * The chapter committee for the public welcome page: verified members with a committee title.
+ * Only name, title, branch and batch are shown; the privacy notice says so.
+ */
+export async function committee(db: Db) {
+  const order = sql.raw(`array_position(ARRAY[${TITLES.map((t) => `'${t.replace(/'/g, "''")}'`).join(',')}]::text[], title::text)`);
+  return db
+    .select({ name: members.name, title: members.title, branch: members.branch, batch: members.batch })
+    .from(members)
+    .where(and(eq(members.status, 'verified'), sql`${members.title} IS NOT NULL AND ${members.title} <> ''`))
+    .orderBy(sql`${order} NULLS LAST`, members.name)
+    .limit(12);
 }

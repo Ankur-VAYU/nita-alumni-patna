@@ -273,6 +273,40 @@ describe('directory summary', () => {
   });
 });
 
+describe('visitor pages', () => {
+  it('shows the welcome page with the next event, institute updates and the titled committee only', async () => {
+    await makeEvent({ title: 'Annual alumni meet' });
+    await member({ name: 'Ankur President', title: 'President', role: 'admin', phone: '9431100001' });
+    await member({ name: 'Secret Person', phone: '9431100002' });
+    await t.inject({ method: 'POST', url: '/api/v1/admin/news', headers: admin, payload: { kind: 'institute', tag: 'Notice', title: 'Convocation registration open', link: 'https://www.nita.ac.in/notice' } });
+    const res = await t.inject('/');
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-security-policy']).toContain("script-src 'self'");
+    expect(res.body).toContain('wherever they work.');
+    expect(res.body).toContain('Annual alumni meet');
+    expect(res.body).toContain('Sign in to RSVP');
+    expect(res.body).toContain('Convocation registration open');
+    expect(res.body).toContain('Ankur President');
+    expect(res.body).toContain('President · Electrical Engineering 2010');
+    expect(res.body).not.toContain('Secret Person');
+    expect(res.body).not.toContain('9431100001');
+    expect(res.body).not.toContain('@example.com');
+  });
+
+  it('lists event details for visitors without who is going', async () => {
+    const e = await makeEvent({ capacity: 50 });
+    await makeEvent({ title: 'Cancelled meet' }).then((x) => t.inject({ method: 'POST', url: `/api/v1/admin/events/${x.id}/cancel`, headers: admin }));
+    const a = await member();
+    await a.req('POST', `/api/v1/events/${e.id}/rsvp`, { guests: 1 });
+    const list = (await t.inject('/api/v1/public/events')).json();
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ title: 'Annual alumni meet', people: 2, placesLeft: 48 });
+    expect(JSON.stringify(list)).not.toContain(a.name);
+    expect((await t.inject('/events')).statusCode).toBe(200);
+    expect((await t.inject(`/api/v1/events/${e.id}/attendees`)).statusCode).toBe(401);
+  });
+});
+
 describe('member pages', () => {
   it('shows the next event and latest posts on the home page', async () => {
     await makeEvent({ title: 'Chhath get-together' });
@@ -285,7 +319,8 @@ describe('member pages', () => {
       const res = await t.inject({ url: page, headers: { cookie: a.cookie } });
       expect(res.statusCode).toBe(200);
     }
-    expect((await t.inject('/events')).statusCode).toBe(302);
+    expect((await t.inject('/board')).statusCode).toBe(302);
+    expect((await t.inject('/alumni')).statusCode).toBe(302);
     expect((await t.inject('/api/v1/posts')).statusCode).toBe(401);
   });
 });

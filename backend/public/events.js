@@ -13,6 +13,8 @@
   };
 
   const IS_ADMIN = root.dataset.role === 'admin';
+  // Visitors who are not signed in see details and places left, and sign in to RSVP.
+  const GUEST = root.dataset.guest === '1';
   const MON = (d) => ist(d, { month: 'short' });
 
   function rsvpControls(e) {
@@ -38,8 +40,11 @@
     if (e.status === 'cancelled') actions.append(h('span', { class: 'tag bad' }, 'Cancelled'));
     else if (e.past) actions.append(h('span', { class: 'tag' }, 'Past'));
     else {
-      if (e.mine) actions.append(h('span', { class: 'btn on' }, `Going${e.mine.guests ? ` · +${e.mine.guests}` : ''}`));
-      actions.append(...rsvpControls(e));
+      if (GUEST) actions.append(h('a', { class: 'btn', href: '/login' }, 'Sign in to RSVP'));
+      else {
+        if (e.mine) actions.append(h('span', { class: 'btn on' }, `Going${e.mine.guests ? ` · +${e.mine.guests}` : ''}`));
+        actions.append(...rsvpControls(e));
+      }
       if (e.capacity) {
         const taken = e.people;
         actions.append(h('div', { class: 'cap' }, h('span', {}, `${taken} of ${e.capacity} places taken · ${e.placesLeft} left`),
@@ -67,10 +72,10 @@
 
   async function load() {
     try {
-      const list = await api('/api/v1/events');
+      const list = GUEST ? await fetch('/api/v1/public/events').then((r) => { if (!r.ok) throw new Error('Could not load events'); return r.json(); }) : await api('/api/v1/events');
       const up = list.filter((e) => !e.past), past = list.filter((e) => e.past);
       root.replaceChildren(
-        h('div', { class: 'top' }, h('div', {}, h('h1', {}, 'Events'), h('p', {}, 'Alumni meets and chapter activities. Places count you and your guests.')),
+        h('div', { class: 'top' }, h('div', {}, h('h1', {}, 'Events'), h('p', {}, 'Alumni meets and chapter activities. Places count you and your guests.' + (GUEST ? ' Sign in to RSVP and see who is going.' : ''))),
           IS_ADMIN ? h('div', { class: 'row' }, h('a', { class: 'btn', href: '/admin#events' }, 'Add event')) : null),
         h('section', { class: 'section' }, h('h2', {}, 'Upcoming'),
           ...(up.length ? up.map(card) : [h('div', { class: 'card empty' }, 'No upcoming events yet. The committee will announce the next meet here.')])),

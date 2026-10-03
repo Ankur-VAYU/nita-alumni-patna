@@ -16,7 +16,7 @@ describe('join form page', () => {
     expect(res.body).toContain('<option value="Outside India">');
     expect(res.body).not.toContain('{{');
     expect(res.headers['content-security-policy']).toContain("script-src 'self'");
-    expect((await t.inject('/')).headers.location).toBe('/join');
+    expect(res.body).toContain('class="side"');
     const privacy = await t.inject('/privacy');
     expect(privacy.statusCode).toBe(200);
     expect(privacy.body).toContain('Proof documents are deleted');
