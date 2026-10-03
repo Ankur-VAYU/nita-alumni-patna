@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Saves the database connection string into .env without showing it on screen.
-// Usage on a Mac, after copying the string from Neon:   pbpaste | npm run set-db
+// Usage: npm run set-db   (then paste the string when asked; it is not shown)
+//    or: pbpaste | npm run set-db
 // Add --new-key to replace the admin key (then store it in Cloudflare again with wrangler secret put).
 // Accepts the plain string or Neon's "psql '...'" snippet; strips quotes and spaces.
 // Also creates ADMIN_API_KEY if it is missing or too short. Prints only a masked summary.
@@ -11,9 +12,45 @@ import { fileURLToPath } from 'node:url';
 
 const envPath = join(dirname(fileURLToPath(import.meta.url)), '..', '.env');
 
-const chunks = [];
-for await (const c of process.stdin) chunks.push(c);
-const input = Buffer.concat(chunks).toString('utf8');
+/** Asks for the string in the terminal without showing what is typed or pasted. */
+function askHidden(question) {
+  return new Promise((resolve) => {
+    process.stdout.write(question);
+    const stdin = process.stdin;
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+    let value = '';
+    const onData = (chunk) => {
+      for (const ch of chunk) {
+        if (ch === '\r' || ch === '\n') {
+          stdin.setRawMode(false);
+          stdin.pause();
+          stdin.off('data', onData);
+          process.stdout.write(`\n(received ${value.length} characters)\n`);
+          resolve(value);
+          return;
+        }
+        if (ch === '\u0003') {
+          process.stdout.write('\nCancelled.\n');
+          process.exit(130);
+        }
+        if (ch === '\u007f' || ch === '\b') value = value.slice(0, -1);
+        else if (ch >= ' ' || ch === '\t') value += ch;
+      }
+    };
+    stdin.on('data', onData);
+  });
+}
+
+let input;
+if (process.stdin.isTTY) {
+  input = await askHidden('Paste the Neon connection string (it stays hidden), then press Enter: ');
+} else {
+  const chunks = [];
+  for await (const c of process.stdin) chunks.push(c);
+  input = Buffer.concat(chunks).toString('utf8');
+}
 
 const fail = (msg) => {
   console.error(`Not saved: ${msg}`);
