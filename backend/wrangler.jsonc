@@ -6,7 +6,7 @@
   "compatibility_date": "2025-09-01",
   // node:crypto, Buffer and the PostgreSQL driver need Node.js compatibility.
   "compatibility_flags": ["nodejs_compat"],
-  // join.css, join.js, emblem.svg, robots.txt. Requests for other paths go to the Worker.
+  // site.css, page scripts, emblem.svg, robots.txt. Requests for other paths go to the Worker.
   "assets": { "directory": "./public" },
   "hyperdrive": [
     {
@@ -17,5 +17,7 @@
       "localConnectionString": "postgres://postgres:postgres@localhost:5432/nita_alumni"
     }
   ],
+  // Reads the latest notices, news and events from nita.ac.in every 6 hours (times in UTC).
+  "triggers": { "crons": ["15 */6 * * *"] },
   "observability": { "enabled": true }
 }

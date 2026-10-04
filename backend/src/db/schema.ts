@@ -152,3 +152,19 @@ export const announcements = pgTable('announcements', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const instituteItems = pgTable('institute_items', {
+  section: varchar('section', { length: 10 }).$type<'notice' | 'news' | 'event'>().notNull(),
+  position: smallint('position').notNull(),
+  title: varchar('title', { length: 400 }).notNull(),
+  summary: varchar('summary', { length: 600 }),
+  link: varchar('link', { length: 600 }).notNull(),
+  itemDate: date('item_date'),
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const appState = pgTable('app_state', {
+  key: varchar('key', { length: 60 }).primaryKey(),
+  value: jsonb('value').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});

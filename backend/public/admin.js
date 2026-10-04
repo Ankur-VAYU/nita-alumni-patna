@@ -469,14 +469,31 @@
   /* ---------- content ---------- */
   const UPDATE_TAGS = ['Admission', 'Notice', 'Result', 'Tender', 'Event', 'News'];
 
+  /** The automatic nita.ac.in check: when it last worked, what it found, and a "Check now" button. */
+  function nitaStatusCard(st) {
+    const when = (iso) => (iso ? fmtDate(iso) : 'never');
+    const found = st.counts && Object.keys(st.counts).length ? `${st.counts.notice || 0} notices, ${st.counts.news || 0} news, ${st.counts.event || 0} events` : 'nothing yet';
+    const btn = actionBtn('Check now', 'ghost', async () => {
+      const r = await api('/nita/refresh', { json: {} });
+      toast(r.lastError ? 'Check failed: ' + r.lastError : 'Updated from nita.ac.in');
+      viewContent();
+    });
+    return h('div', { class: 'card section', style: 'gap:8px' },
+      h('div', { class: 'section-head' }, h('h2', {}, 'Automatic headlines from nita.ac.in'), btn),
+      h('p', { class: 'muted' }, 'The latest 2 from the Notice Board, Latest News and Upcoming Events are read every 6 hours and shown on Home and the welcome page.'),
+      kv([['Last successful check', when(st.lastSuccessAt)], ['Last attempt', when(st.lastAttemptAt)], ['Found', found]]),
+      st.lastError ? h('p', { class: 'note warn' }, `The last check did not work: ${st.lastError}. The previous headlines are still shown. Updates added below still appear.`) : null);
+  }
+
   async function viewContent() {
-    const list = await api('/news');
+    const [list, nita] = await Promise.all([api('/news'), api('/nita')]);
     const formBox = h('div', {});
     const openForm = (kind, n) => { formBox.replaceChildren(newsForm(kind, n, () => { formBox.replaceChildren(); viewContent(); })); formBox.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
     const save = (n, changes) => api(`/news/${n.id}`, { method: 'PUT', json: { kind: n.kind, tag: n.tag || '', title: n.title, body: n.body || '', link: n.link || '', pinned: n.pinned, publishedOn: n.publishedOn, ...changes } });
     const del = (n) => actionBtn('Delete', 'danger', async () => { await api(`/news/${n.id}`, { method: 'DELETE' }); toast('Deleted'); viewContent(); }, `Delete "${n.title}"?`);
     const chapter = list.filter((n) => n.kind === 'chapter'), institute = list.filter((n) => n.kind === 'institute');
     panel.replaceChildren(
+      nitaStatusCard(nita),
       h('div', { class: 'row' },
         h('button', { class: 'btn', type: 'button', onclick: () => openForm('chapter') }, 'Post announcement'),
         IS_ADMIN ? h('button', { class: 'btn ghost', type: 'button', onclick: () => { show('events').then(() => viewEvents(true)); } }, 'Add event') : null,
@@ -489,7 +506,7 @@
             actionBtn(n.pinned ? 'Unpin' : 'Pin', 'ghost', async () => { await save(n, { pinned: !n.pinned }); toast(n.pinned ? 'Unpinned' : 'Pinned'); viewContent(); }),
             h('button', { class: 'btn ghost small', type: 'button', onclick: () => openForm('chapter', n) }, 'Edit'), del(n)))))
           : h('div', { class: 'card empty' }, 'No announcements yet. Pinned announcements appear at the top of every member\'s home page.')),
-      h('section', { class: 'section' }, h('h2', {}, 'NIT Agartala updates'),
+      h('section', { class: 'section' }, h('h2', {}, 'NIT Agartala updates added by hand'),
         institute.length ? h('div', { class: 'card list' }, institute.map((n) => h('div', { class: 'item wide' },
           h('div', {}, n.tag ? [h('span', { class: 'tag' }, n.tag), ' '] : null, h('b', {}, n.title), h('div', { class: 'muted' }, fmtDay(n.publishedOn), n.link ? [' · ', h('a', { href: n.link, target: '_blank', rel: 'noopener noreferrer' }, 'link ↗')] : null)),
           h('div', { class: 'actions' }, h('button', { class: 'btn ghost small', type: 'button', onclick: () => openForm('institute', n) }, 'Edit'), del(n)))))

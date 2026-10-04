@@ -19,6 +19,7 @@ import { adminPage, alumniPage, boardPage, eventsPage, homePage, joinPage, login
 import { newsInput, newsQuery } from '../news/schemas.js';
 import { createNews, deleteNews, listNews, newsHighlights, updateNews } from '../news/service.js';
 import { adminOverview, batchListInfo } from '../admin/overview.js';
+import { feedStatus, instituteFeed, refreshNita } from '../news/nita.js';
 import { eventInput, postInput, postListQuery, postStatusInput, reportInput, rsvpInput } from '../community/schemas.js';
 import {
   attendees, cancelRsvp, createEvent, createPost, dismissReports, eventPayments, homeHighlights, interestedIn, listEvents,
@@ -328,6 +329,7 @@ export function createHttpApp(opts: HttpOptions) {
     return c.html(visitorHomePage({
       nextEvent: upcoming,
       institute: await listNews(c.var.db, { kind: 'institute', limit: 4 }),
+      feed: await instituteFeed(c.var.db),
       committee: await committee(c.var.db),
     }));
   });
@@ -353,7 +355,7 @@ export function createHttpApp(opts: HttpOptions) {
     const r = await memberPage(c);
     if (r.redirect) return r.redirect;
     const m = await getMember(c.var.db, r.who.id);
-    const hl = { ...(await homeHighlights(c.var.db, r.who.id)), ...(await newsHighlights(c.var.db)) };
+    const hl = { ...(await homeHighlights(c.var.db, r.who.id)), ...(await newsHighlights(c.var.db)), feed: await instituteFeed(c.var.db) };
     return c.html(homePage(r.nav, await chapterStats(c.var.db), profileCompleteness(m), hl));
   });
 
@@ -380,7 +382,7 @@ export function createHttpApp(opts: HttpOptions) {
     const r = await memberPage(c);
     if (r.redirect) return r.redirect;
     const [chapter, institute] = await Promise.all([listNews(c.var.db, { kind: 'chapter' }), listNews(c.var.db, { kind: 'institute' })]);
-    return c.html(newsPage(r.nav, chapter, institute));
+    return c.html(newsPage(r.nav, chapter, institute, await instituteFeed(c.var.db)));
   });
 
   app.get('/me/edit', (c) => c.redirect('/me'));
@@ -529,6 +531,13 @@ export function createHttpApp(opts: HttpOptions) {
   admin.post('/posts/:id/dismiss', async (c) => c.json(await dismissReports(c.var.db, id(c), actorOf(c))));
 
   // Announcements and NIT Agartala updates: admins and moderators.
+  // Automatic headlines from nita.ac.in: status, and "Check now" (at most once a minute).
+  admin.get('/nita', async (c) => c.json(await feedStatus(c.var.db)));
+  admin.post('/nita/refresh', async (c) => {
+    const s = await feedStatus(c.var.db);
+    if (s.lastAttemptAt && Date.now() - new Date(s.lastAttemptAt).getTime() < 60_000) throw new AppError(429, 'TOO_SOON', 'Checked less than a minute ago. Please wait a moment.');
+    return c.json(await refreshNita(c.var.db, opts.fetch ?? fetch));
+  });
   admin.get('/news', async (c) => c.json(await listNews(c.var.db, parse(newsQuery, c.req.query()))));
   admin.post('/news', async (c) => c.json(await createNews(c.var.db, parse(newsInput, await readJson(c)), { id: c.var.actor.id, label: actorOf(c) }), 201));
   admin.put('/news/:id', async (c) => c.json(await updateNews(c.var.db, id(c), parse(newsInput, await readJson(c)), actorOf(c))));

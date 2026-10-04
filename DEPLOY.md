@@ -237,7 +237,7 @@ a new empty database: `gunzip -c backups/<file>.sql.gz | psql "<new database URL
 - Sign-in is with Google only. Members without a Google account (or whose profile has no email) cannot sign in yet; an admin can add the email in the admin pages.
 - No WhatsApp or email messages yet; applicants are not told automatically when they are approved.
 - The public welcome page shows the chapter committee: name, title, branch and batch of verified members who have a committee title (Admin → Members). The privacy notice says so.
-- NIT Agartala updates are added by an admin or moderator (Admin → Content), with a link to the notice on nita.ac.in. They are not fetched automatically.
+- NIT Agartala headlines (latest 2 from the Notice Board, Latest News and Upcoming Events) are read from the nita.ac.in home page every 6 hours by a Cloudflare scheduled trigger (`triggers` in `wrangler.jsonc`). Admin → Content shows when the last check worked and has a "Check now" button. If the institute redesigns its website the reader may stop finding items; the last headlines stay and the page shows a warning. Admins can still add updates by hand.
 - Event contributions are paid at the venue (cash or UPI) and recorded by an admin with "Mark paid". Online payment needs a payment-gateway account (for example Razorpay) in the chapter's name.
 - Proof documents are limited to 500 KB to stay within the free plan's CPU limit.
 

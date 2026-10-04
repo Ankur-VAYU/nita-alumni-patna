@@ -19,5 +19,9 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
   {
     "name": "0005_announcements.sql",
     "sql": "-- Chapter announcements and NIT Agartala updates, posted by the committee (admins and moderators).\n\nCREATE TYPE news_kind AS ENUM ('chapter', 'institute');\n\nCREATE TABLE announcements (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  kind news_kind NOT NULL,\n  -- For NIT Agartala updates: Admission, Notice, Result, Tender, Event, News.\n  tag varchar(30),\n  title varchar(160) NOT NULL,\n  body text,\n  link varchar(500),\n  pinned boolean NOT NULL DEFAULT false,\n  published_on date NOT NULL DEFAULT (now() AT TIME ZONE 'Asia/Kolkata')::date,\n  created_by uuid REFERENCES members(id) ON DELETE SET NULL,\n  created_by_label varchar(160) NOT NULL,\n  created_at timestamptz NOT NULL DEFAULT now(),\n  updated_at timestamptz NOT NULL DEFAULT now()\n);\nCREATE INDEX announcements_list_idx ON announcements (kind, pinned DESC, published_on DESC, created_at DESC);\n\nALTER TABLE announcements ENABLE ROW LEVEL SECURITY;\n"
+  },
+  {
+    "name": "0006_institute_feed.sql",
+    "sql": "-- Items read automatically from the nita.ac.in home page (Notice Board, Latest News, Upcoming Events),\n-- replaced on every successful check, plus the status of the last check.\n\nCREATE TABLE institute_items (\n  section varchar(10) NOT NULL CHECK (section IN ('notice', 'news', 'event')),\n  position smallint NOT NULL,\n  title varchar(400) NOT NULL,\n  summary varchar(600),\n  link varchar(600) NOT NULL,\n  item_date date,\n  fetched_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (section, position)\n);\n\nCREATE TABLE app_state (\n  key varchar(60) PRIMARY KEY,\n  value jsonb NOT NULL,\n  updated_at timestamptz NOT NULL DEFAULT now()\n);\n\nALTER TABLE institute_items ENABLE ROW LEVEL SECURITY;\nALTER TABLE app_state ENABLE ROW LEVEL SECURITY;\n"
   }
 ];

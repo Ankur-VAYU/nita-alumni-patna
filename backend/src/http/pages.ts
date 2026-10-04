@@ -215,13 +215,32 @@ interface Highlights {
   openJobs: number;
   announcements: NewsItem[];
   institute: NewsItem[];
+  feed: InstituteFeed;
 }
 
-function updatesSection(list: NewsItem[], more: boolean) {
+interface FeedItem { title: string; summary: string | null; link: string; date: string | null }
+export interface InstituteFeed { notice: FeedItem[]; news: FeedItem[]; event: FeedItem[]; lastSuccessAt: string | null }
+
+const fmtChecked = (iso: string) => new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+const extLink = (href: string, text: string) => `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`;
+
+/**
+ * "From NIT Agartala": the latest items read automatically from nita.ac.in (Notice Board, Latest News,
+ * Upcoming Events), then anything the committee added by hand in Admin → Content.
+ */
+function updatesSection(feed: InstituteFeed, manual: NewsItem[], allLink: boolean) {
+  const group = (label: string, tag: string, items: FeedItem[]) => items.length ? `<div class="card section" style="gap:4px"><div class="eyebrow">${label}</div><div class="list">${items.map((it) =>
+    `<div class="item"><span class="tag">${tag}</span><div><h3>${extLink(it.link, it.title)}</h3>${it.summary ? `<p class="small">${esc(it.summary)}</p>` : ''}${it.date ? `<small>${esc(fmtDay(it.date))}</small>` : ''}</div></div>`).join('')}</div></div>` : '';
+  const auto = group('Notice board', 'Notice', feed.notice) + group('Latest news', 'News', feed.news) + group('Upcoming events', 'Event', feed.event);
+  const hand = manual.length ? `<div class="card section" style="gap:4px"><div class="eyebrow">Added by the committee</div><div class="list">${manual.map((n) =>
+    `<div class="item${n.tag ? '' : ' one'}">${n.tag ? `<span class="tag">${esc(n.tag)}</span>` : ''}<div><h3>${n.link ? extLink(n.link, n.title) : esc(n.title)}</h3>${n.body ? `<p class="small">${esc(n.body)}</p>` : ''}<small>${esc(fmtDay(n.publishedOn))}</small></div></div>`).join('')}</div></div>` : '';
+  const note = feed.lastSuccessAt
+    ? `Updated automatically from nita.ac.in every 6 hours · last checked ${esc(fmtChecked(feed.lastSuccessAt))}.`
+    : 'Headlines from nita.ac.in appear here after the first automatic check.';
   return `<section class="section">
-  <div class="section-head"><h2>From NIT Agartala</h2><a class="linkbtn" href="https://www.nita.ac.in" target="_blank" rel="noopener noreferrer">nita.ac.in ↗</a></div>
-  ${list.length ? `<div class="card list">${list.map((n) => `<div class="item${n.tag ? '' : ' one'}">${n.tag ? `<span class="tag">${esc(n.tag)}</span>` : ''}<div><h3>${n.link ? `<a href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a>` : esc(n.title)}</h3>${n.body ? `<p class="small">${esc(n.body)}</p>` : ''}<small>${esc(fmtDay(n.publishedOn))}</small></div></div>`).join('')}</div>` : '<div class="card empty">No institute updates yet.</div>'}
-  <p class="hint">Picked from nita.ac.in by the chapter committee.${more ? ' <a href="/news">All updates</a>' : ''}</p>
+  <div class="section-head"><h2>From NIT Agartala</h2><a class="linkbtn" href="https://nita.ac.in/" target="_blank" rel="noopener noreferrer">nita.ac.in ↗</a></div>
+  ${auto || hand ? auto + hand : '<div class="card empty">No institute updates yet.</div>'}
+  <p class="hint">${note}${allLink ? ' <a href="/news">All news</a>' : ''}</p>
 </section>`;
 }
 
@@ -254,21 +273,19 @@ ${hl.announcements.length ? `<section class="section"><div class="section-head">
   <div class="card stat"><b>${stats.outsideBihar}</b><span>working outside Bihar</span></div>
   <div class="card stat"><b>${hl.openJobs}</b><span>open vacancies and referrals</span></div>
 </div>
-<div class="grid2">
-  ${updatesSection(hl.institute, true)}
-  <section class="section">
+${updatesSection(hl.feed, hl.institute, true)}
+<section class="section">
     <div class="section-head"><h2>Latest on the board</h2><a class="linkbtn" href="/board">See all</a></div>
     ${hl.latestPosts.length ? `<div class="card list">${hl.latestPosts.map((p) => `<div class="item"><span class="tag ${esc(p.type)}">${esc(POST_LABEL[p.type] ?? p.type)}</span><div><h3>${esc(p.title)}</h3><small>${esc(p.district)}, ${esc(p.state)} · ${esc(p.authorName)}</small></div></div>`).join('')}</div>` : '<div class="card empty">Nothing posted yet. <a href="/board">Share a vacancy or ask for help.</a></div>'}
-  </section>
-</div>`, { user, active: 'home' });
+  </section>`, { user, active: 'home' });
 }
 
-export function newsPage(user: NavUser, chapter: NewsItem[], institute: NewsItem[]) {
+export function newsPage(user: NavUser, chapter: NewsItem[], institute: NewsItem[], feed: InstituteFeed) {
   const staff = user.role === 'admin' || user.role === 'moderator';
   return layout('News', `
 ${top('News', 'Chapter announcements and updates from NIT Agartala.', staff ? '<a class="btn" href="/admin#content">Post news</a>' : '')}
 <section class="section"><h2>Chapter announcements</h2>${chapter.length ? announcementsList(chapter) : '<div class="card empty">No announcements yet.</div>'}</section>
-${updatesSection(institute, false)}`, { user, active: 'home' });
+${updatesSection(feed, institute, false)}`, { user, active: 'home' });
 }
 
 export function alumniPage(user: NavUser) {
@@ -284,6 +301,7 @@ export function eventsPage(user: NavUser | null) {
 interface PublicHighlights {
   nextEvent: { title: string; startsAt: Date; venue: string; feePaise: number; feeBasis: string; capacity: number | null; people: number } | null;
   institute: NewsItem[];
+  feed: InstituteFeed;
   committee: { name: string; title: string | null; branch: string; batch: number }[];
 }
 
@@ -315,7 +333,8 @@ export function visitorHomePage(hl: PublicHighlights) {
   <div class="card step"><h3>Get verified, then sign in with Google</h3><p class="muted">The committee checks your details, usually within 2 working days.</p></div>
 </div></section>
 ${eventCard}
-${committeeSection ? `<div class="grid2">${updatesSection(hl.institute, false)}${committeeSection}</div>` : updatesSection(hl.institute, false)}`, { user: null, active: 'home' });
+${updatesSection(hl.feed, hl.institute, false)}
+${committeeSection}`, { user: null, active: 'home' });
 }
 
 export interface JoinLists { degrees: readonly string[]; branches: readonly string[]; years: readonly number[]; districts: readonly string[]; states: readonly string[] }
