@@ -118,6 +118,7 @@
     if (o.pending) attention.push([`${o.pending} registration${o.pending === 1 ? '' : 's'} waiting`, 'verify']);
     if (o.reported) attention.push([`${o.reported} reported post${o.reported === 1 ? '' : 's'}`, 'reports']);
     if (IS_ADMIN && o.nextEvent && o.nextEvent.unpaidPaise) attention.push([`${rupees(o.nextEvent.unpaidPaise)} not yet paid for “${o.nextEvent.title}”`, 'events']);
+    if (IS_ADMIN && o.deletionRequests) attention.push([`${o.deletionRequests} member${o.deletionRequests === 1 ? '' : 's'} asked for their account to be deleted`, 'members']);
     if (IS_ADMIN && o.admins < 2) attention.push([`Only ${o.admins === 1 ? 'one admin' : 'no admins with a member profile'}. Appoint a second admin so verification continues when the President is away`, 'members']);
     panel.replaceChildren(
       h('div', { class: 'stats' },
@@ -388,18 +389,27 @@
       if (m.role !== 'moderator') actions.append(actionBtn('Make moderator', 'ghost', setRole('moderator')));
       if (m.role !== 'admin') actions.append(actionBtn('Make admin', 'ghost', setRole('admin'), `Make ${m.name} an admin? Admins can change everything, including roles.`));
       if (m.role !== 'member') actions.append(actionBtn(`Remove ${m.role} role`, 'ghost', setRole('member', null)));
+      if (m.deletionRequestedAt) actions.append(deleteBtn(m, reload));
       actions.append(actionBtn('Suspend', 'danger', async () => { await api(`/members/${m.id}/suspend`, { json: {} }); toast('Suspended'); reload(); }, `Suspend ${m.name}? They will not be able to sign in.`));
     } else if (IS_ADMIN && m.status === 'suspended') {
+      if (m.deletionRequestedAt) actions.append(deleteBtn(m, reload));
       actions.append(actionBtn('Reinstate', 'ghost', async () => { await api(`/members/${m.id}/reinstate`, { json: {} }); toast('Reinstated'); reload(); }));
     }
     return h('div', { class: 'item member-row' }, avatar(m, 'sm'),
       h('div', {},
         h('div', { class: 'row', style: 'gap:6px' }, h('b', {}, m.name), statusTag(m.status),
+          m.deletionRequestedAt ? h('span', { class: 'tag bad' }, 'Deletion requested') : null,
           m.title ? h('span', { class: 'tag info' }, m.title) : m.role !== 'member' ? h('span', { class: 'tag info' }, m.role) : null),
         h('div', { class: 'batch' }, [m.rollNo || 'no roll no.', m.batch, fmtPhone(m.phone)].join(' · ')),
-        !m.email ? h('div', { class: 'err' }, 'No email: cannot sign in') : null),
+        !m.email ? h('div', { class: 'err' }, 'No email: cannot sign in') : null,
+        m.deletionRequestedAt ? h('div', { class: 'muted' }, `Asked on ${fmtShort(m.deletionRequestedAt)}${m.deletionNote ? `: “${m.deletionNote}”` : ''}`) : null),
       actions);
   }
+
+  /** Permanent deletion, offered when the member asked for it. */
+  const deleteBtn = (m, reload) => actionBtn('Delete permanently', 'danger', async () => {
+    await api(`/members/${m.id}`, { method: 'DELETE' }); toast(`${m.name}'s account was deleted`); reload();
+  }, `Delete ${m.name}'s account permanently? Their profile, photo, RSVPs and board posts are removed. This cannot be undone.`);
 
   function addMemberForm(done) {
     const R = reference;
@@ -554,7 +564,7 @@
       'member.role_changed': 'changed a role', 'member.suspended': 'suspended', 'member.reinstated': 'reinstated', 'members.imported': 'imported members',
       'batch_list.uploaded': 'uploaded the batch list', 'member.signed_in': 'signed in', 'event.created': 'created an event', 'event.updated': 'edited an event',
       'event.cancelled': 'cancelled an event', 'event.restored': 'restored an event', 'event.payment_recorded': 'recorded a payment', 'post.removed': 'removed a post',
-      'post.reports_dismissed': 'dismissed reports', 'post.status_changed': 'changed a post', 'news.created': 'posted news', 'news.updated': 'edited news', 'news.deleted': 'deleted news',
+      'post.reports_dismissed': 'dismissed reports', 'post.status_changed': 'changed a post', 'news.created': 'posted news', 'news.updated': 'edited news', 'news.deleted': 'deleted news', 'member.resubmitted': 'submitted again after a rejection', 'member.deletion_requested': 'asked for account deletion', 'member.deletion_withdrawn': 'withdrew the deletion request', 'member.deleted': 'deleted an account',
     };
     const who = (a) => a.replace(/^(member|admin):/, '').replace(/^admin-(key|api)$/, 'Admin key');
     panel.replaceChildren(

@@ -8,6 +8,8 @@ export interface NavUser {
   name: string;
   role: string;
   member: boolean;
+  /** Someone whose registration is waiting or was not verified: they only see their status page. */
+  applicant?: boolean;
   /** Registrations waiting plus reported posts, shown on the Admin link for staff. */
   badge?: number;
 }
@@ -26,6 +28,7 @@ const icon = (k: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="curren
 
 function navItems(u: NavUser | null | undefined): [Page, string, string, string][] {
   if (!u) return [['home', 'Home', '/', 'Home'], ['events', 'Events', '/events', 'Events'], ['signin', 'Sign in', '/login', 'Sign in']];
+  if (u.applicant) return [['profile', 'My registration', '/status', 'Status']];
   if (!u.member) return [['admin', 'Admin', '/admin', 'Admin']];
   const items: [Page, string, string, string][] = [
     ['home', 'Home', '/home', 'Home'], ['events', 'Events', '/events', 'Events'], ['alumni', 'Alumni', '/alumni', 'Alumni'],
@@ -41,7 +44,7 @@ function layout(title: string, body: string, opts: { user?: NavUser | null; acti
   const cur = (k: Page) => (opts.active === k ? ' aria-current="page"' : '');
   const badge = (k: Page, dot: boolean) => (k === 'admin' && u?.badge ? (dot ? '<span class="dot"></span>' : `<span class="count">${u.badge}</span>`) : '');
   const role = u && u.role !== 'member' ? `<em class="pill">${esc(u.role)}</em>` : '';
-  const brand = (size: number) => `<a class="brand" href="${u ? (u.member ? '/home' : '/admin') : '/'}"><img src="/emblem.svg" alt="" width="${size}" height="${size}"><span><b>NITA Alumni</b><small>Patna Chapter</small></span></a>`;
+  const brand = (size: number) => `<a class="brand" href="${u ? (u.applicant ? '/status' : u.member ? '/home' : '/admin') : '/'}"><img src="/emblem.svg" alt="" width="${size}" height="${size}"><span><b>NITA Alumni</b><small>Patna Chapter</small></span></a>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -118,7 +121,7 @@ ${top('Sign in', 'For verified NIT Agartala alumni of the Patna Chapter.')}
 }
 
 export interface MeView {
-  id: string; name: string; status: string; role: string; title: string | null; updatedAt: Date;
+  id: string; name: string; status: string; role: string; title: string | null; updatedAt: Date; deletionRequestedAt: Date | null;
 }
 export interface Completeness { pct: number; missing: string[] }
 
@@ -133,7 +136,69 @@ ${comp.pct < 100 ? `<div class="card section" style="gap:8px"><b>Profile ${comp.
 <section class="section">
   <h2>Account</h2>
   <div class="card row" style="justify-content:space-between"><span class="muted">Signed in with Google as ${esc(email ?? '')}</span><a class="btn ghost" href="/logout">Sign out</a></div>
+  ${m.deletionRequestedAt
+    ? `<div class="banner warn" id="deletion"><span class="tag warn">Deletion requested</span><span>You asked on ${esc(fmtDay(m.deletionRequestedAt.toISOString().slice(0, 10)))} for your account to be deleted. A chapter admin will delete your profile, RSVPs and board posts. Changed your mind?</span><button class="btn ghost small" type="button" id="cancelDeletion">Cancel request</button></div>`
+    : `<div class="card section" id="deletion" style="gap:10px">
+    <div class="section-head"><div><b>Delete my account</b><p class="muted">Removes your profile, photo, RSVPs and board posts. You can join again later.</p></div><button class="btn danger" type="button" id="askDeletion">Request account deletion</button></div>
+    <div class="stack" id="deletionForm" hidden style="gap:10px">
+      <div class="field"><label for="deletionNote">Reason (optional, seen only by chapter admins)</label><textarea id="deletionNote" maxlength="300" rows="3"></textarea></div>
+      <div class="row"><button class="btn danger" type="button" id="confirmDeletion">Send request</button><button class="btn ghost" type="button" id="closeDeletion">Keep my account</button></div>
+    </div></div>`}
 </section>`, { user, active: 'profile', script: '/profile.js' });
+}
+
+export interface ApplicantView {
+  name: string; email: string | null; rollNo: string | null; degree: string; batch: number; branch: string;
+  position: string | null; organisation: string | null; workDistrict: string | null; workState: string | null; homeDistrict: string;
+  vouchedBy: string | null; hasProof: boolean; status: string; rejectReason: string | null; createdAt: Date; updatedAt: Date;
+}
+export interface StatusLists { degrees: readonly string[]; branches: readonly string[]; years: readonly number[]; districts: readonly string[]; states: readonly string[] }
+
+/** For applicants: where the registration stands; if it was not verified, the reason and a form to correct it. */
+export function statusPage(m: ApplicantView, l: StatusLists) {
+  const user: NavUser = { name: m.name, role: 'member', member: false, applicant: true };
+  const opts = (list: readonly (string | number)[], value: string | number | null) =>
+    list.map((v) => `<option value="${esc(v)}"${String(v) === String(value ?? '') ? ' selected' : ''}>${esc(v)}</option>`).join('');
+  const err = (n: string) => `<small class="err" data-for="${n}"></small>`;
+  const val = (v: string | number | null) => esc(v ?? '');
+  const summary = `<dl class="kv">
+    <dt>Name</dt><dd>${esc(m.name)}</dd><dt>Email</dt><dd>${esc(m.email ?? '')}</dd>
+    <dt>At NIT Agartala</dt><dd>${esc([m.rollNo, m.degree, m.branch, m.batch].filter(Boolean).join(' · '))}</dd>
+    <dt>Work</dt><dd>${esc([[m.position, m.organisation].filter(Boolean).join(', '), [m.workDistrict, m.workState].filter(Boolean).join(', ')].filter(Boolean).join(' · ') || '—')}</dd>
+    <dt>Home</dt><dd>${esc(m.homeDistrict)}, Bihar</dd><dt>Proof</dt><dd>${m.hasProof ? 'Uploaded' : 'Not uploaded'}</dd></dl>`;
+  if (m.status === 'pending') {
+    return layout('My registration', `
+${top('Your registration', `Submitted on ${esc(fmtDay(m.updatedAt.toISOString().slice(0, 10)))}.`)}
+<div class="banner warn"><span class="tag warn">Waiting for review</span><span>The committee checks every registration against the institute batch list, usually within 2 working days. Once you are verified, sign in again to open the full app.</span></div>
+<section class="card section"><h2>What you submitted</h2>${summary}<p class="hint">Something wrong? Contact a member of the chapter committee.</p></section>`, { user, active: 'profile' });
+  }
+  return layout('My registration', `
+${top('Your registration', 'It was not verified yet. Correct your details below and submit again.')}
+<div class="banner bad"><span class="tag bad">Not verified</span><span>Reason: ${esc(m.rejectReason ?? 'not given')}</span></div>
+<form id="resubmitForm" class="card form" novalidate>
+  <h2>Correct your details</h2>
+  <p class="note bad full" id="formError" role="alert" hidden></p>
+  <fieldset><legend>At NIT Agartala</legend>
+    <div class="field full"><label for="name">Full name (as on degree)</label><input id="name" name="name" required maxlength="120" value="${val(m.name)}">${err('name')}</div>
+    <div class="field"><label for="rollNo">Roll / enrolment number</label><input id="rollNo" name="rollNo" required maxlength="32" value="${val(m.rollNo)}" autocapitalize="characters"><span class="hint">Must match the institute batch list.</span>${err('rollNo')}</div>
+    <div class="field"><label for="degree">Degree</label><select id="degree" name="degree" required>${opts(l.degrees, m.degree)}</select>${err('degree')}</div>
+    <div class="field"><label for="batch">Batch (passing year)</label><select id="batch" name="batch" required>${opts(l.years, m.batch)}</select>${err('batch')}</div>
+    <div class="field"><label for="branch">Branch / department</label><select id="branch" name="branch" required>${opts(l.branches, m.branch)}</select>${err('branch')}</div>
+  </fieldset>
+  <fieldset><legend>Work and home</legend>
+    <div class="field"><label for="position">Current position</label><input id="position" name="position" required maxlength="120" value="${val(m.position)}">${err('position')}</div>
+    <div class="field"><label for="organisation">Current organisation</label><input id="organisation" name="organisation" required maxlength="160" value="${val(m.organisation)}">${err('organisation')}</div>
+    <div class="field"><label for="workDistrict">Work city / district</label><input id="workDistrict" name="workDistrict" required maxlength="80" value="${val(m.workDistrict)}">${err('workDistrict')}</div>
+    <div class="field"><label for="workState">Working state (or outside India)</label><select id="workState" name="workState" required><option value="">Select</option>${opts(l.states, m.workState)}</select>${err('workState')}</div>
+    <div class="field"><label for="homeDistrict">Home district (Bihar)</label><select id="homeDistrict" name="homeDistrict" required>${opts(l.districts, m.homeDistrict)}</select>${err('homeDistrict')}</div>
+  </fieldset>
+  <fieldset><legend>Proof</legend>
+    <div class="field full"><label for="proof">Degree, provisional certificate or institute ID <span class="opt">(recommended)</span></label><input id="proof" type="file" accept="image/jpeg,image/png,application/pdf"><span class="hint">A photo of the certificate (shrunk automatically) or a PDF under 500 KB. Seen only by chapter admins and deleted once your registration is decided.</span>${err('proof')}</div>
+    <div class="field full"><label for="vouchedBy">A verified alumnus who knows you <span class="opt">(optional)</span></label><input id="vouchedBy" name="vouchedBy" maxlength="160" value="${val(m.vouchedBy)}" placeholder="Name and batch, e.g. Priya Sinha, 2015">${err('vouchedBy')}</div>
+  </fieldset>
+  <div class="form-actions"><button class="btn" id="submitBtn" type="submit">Submit again</button></div>
+</form>
+<p class="hint">Your mobile number, email and privacy choices stay as you entered them.</p>`, { user, active: 'profile', script: '/status.js' });
 }
 
 export function adminPage(user: NavUser) {

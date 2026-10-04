@@ -170,3 +170,12 @@ export const directoryQuery = z.object({
   mentor: optional(z.enum(['true', 'false'])).transform((v) => v === 'true'),
   offset: optional(z.coerce.number().int().min(0)).transform((v) => v ?? 0),
 });
+
+/** A rejected applicant corrects their details and submits again. Contact details and privacy stay as they were. */
+export const resubmitInput = joinInput.pick({
+  name: true, rollNo: true, degree: true, batch: true, branch: true, position: true, organisation: true,
+  workDistrict: true, workState: true, homeDistrict: true, vouchedBy: true, proof: true,
+});
+export type ResubmitInput = z.output<typeof resubmitInput>;
+
+export const deletionRequestInput = z.object({ note: z.preprocess(blankToUndefined, z.string().trim().max(300).optional()) });

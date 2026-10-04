@@ -84,7 +84,35 @@ describe('Sign in with Google', () => {
   it('explains why someone cannot sign in', async () => {
     expect((await googleSignIn('stranger@example.com')).location).toBe('/login?m=not_member&email=stranger%40example.com');
     await t.inject({ method: 'POST', url: '/api/v1/join', payload: validJoin({ email: 'kumar@example.com' }) });
-    expect((await googleSignIn('kumar@example.com')).location).toBe('/login?m=pending');
+    // Applicants are signed in to their status page only.
+    const s = await googleSignIn('kumar@example.com');
+    expect(s.location).toBe('/status');
+    const page = await t.inject({ url: '/status', headers: { cookie: s.cookie } });
+    expect(page.body).toContain('Waiting for review');
+    expect((await t.inject({ url: '/home', headers: { cookie: s.cookie } })).headers.location).toBe('/login?m=need');
+    expect((await t.inject({ url: '/api/v1/members', headers: { cookie: s.cookie } })).statusCode).toBe(401);
+  });
+
+  it('shows a rejected applicant the reason and lets them correct the details and submit again', async () => {
+    await t.inject({ method: 'POST', url: '/api/v1/admin/batch-list', headers: { ...admin, 'content-type': 'text/csv' }, payload: 'roll_no,name,batch,branch,degree\n19PCS011,Kumar Gaurav,2021,Computer Science & Engineering,M.Tech\n' });
+    const j = (await t.inject({ method: 'POST', url: '/api/v1/join', payload: validJoin({ email: 'kumar@example.com', rollNo: '19PCS099' }) })).json();
+    await t.inject({ method: 'POST', url: `/api/v1/admin/members/${j.id}/reject`, headers: admin, payload: { reason: 'Roll number not found in batch records' } });
+    const s = await googleSignIn('kumar@example.com');
+    expect(s.location).toBe('/status');
+    const page = (await t.inject({ url: '/status', headers: { cookie: s.cookie } })).body;
+    expect(page).toContain('Reason: Roll number not found in batch records');
+    expect(page).toContain('value="19PCS099"');
+    const fix = { name: 'Kumar Gaurav', rollNo: '19pcs011', degree: 'M.Tech', batch: '2021', branch: 'Computer Science & Engineering', position: 'Data Analyst', organisation: 'BELTRON', workDistrict: 'Patna', workState: 'Bihar', homeDistrict: 'Saran' };
+    expect((await t.inject({ method: 'POST', url: '/api/v1/me/resubmit', headers: { cookie: s.cookie }, payload: fix })).statusCode).toBe(403);
+    const h = { cookie: s.cookie, 'x-requested-with': 'nita-admin' };
+    const r = await t.inject({ method: 'POST', url: '/api/v1/me/resubmit', headers: h, payload: fix });
+    expect(r.json()).toEqual({ status: 'pending', batchMatch: 'full' });
+    expect((await t.inject({ method: 'POST', url: '/api/v1/me/resubmit', headers: h, payload: fix })).statusCode).toBe(400);
+    expect((await t.inject({ url: '/status', headers: { cookie: s.cookie } })).body).toContain('Waiting for review');
+    const m = (await t.inject({ url: `/api/v1/admin/members/${j.id}`, headers: admin })).json();
+    expect(m).toMatchObject({ status: 'pending', rollNo: '19PCS011', rejectReason: null, phone: '+919031066284' });
+    const log = (await t.inject({ url: '/api/v1/admin/audit', headers: admin })).json();
+    expect(log[0]).toMatchObject({ action: 'member.resubmitted', detail: { previousReason: 'Roll number not found in batch records' } });
   });
 
   it('refuses a tampered state, an ID token for another app, and unverified emails', async () => {

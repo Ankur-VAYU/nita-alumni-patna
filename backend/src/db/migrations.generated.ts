@@ -23,5 +23,9 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
   {
     "name": "0006_institute_feed.sql",
     "sql": "-- Items read automatically from the nita.ac.in home page (Notice Board, Latest News, Upcoming Events),\n-- replaced on every successful check, plus the status of the last check.\n\nCREATE TABLE institute_items (\n  section varchar(10) NOT NULL CHECK (section IN ('notice', 'news', 'event')),\n  position smallint NOT NULL,\n  title varchar(400) NOT NULL,\n  summary varchar(600),\n  link varchar(600) NOT NULL,\n  item_date date,\n  fetched_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (section, position)\n);\n\nCREATE TABLE app_state (\n  key varchar(60) PRIMARY KEY,\n  value jsonb NOT NULL,\n  updated_at timestamptz NOT NULL DEFAULT now()\n);\n\nALTER TABLE institute_items ENABLE ROW LEVEL SECURITY;\nALTER TABLE app_state ENABLE ROW LEVEL SECURITY;\n"
+  },
+  {
+    "name": "0007_account_deletion.sql",
+    "sql": "-- Members can ask for their account to be deleted; an admin then deletes it permanently.\nALTER TABLE members ADD COLUMN deletion_requested_at timestamptz;\nALTER TABLE members ADD COLUMN deletion_note varchar(300);\n"
   }
 ];

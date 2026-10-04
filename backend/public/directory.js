@@ -36,7 +36,9 @@
       list.push(chip(`My batch (${me.batch})`, state.batch === String(me.batch), () => set({ batch: state.batch === String(me.batch) ? '' : String(me.batch) })));
       list.push(chip(`From ${me.homeDistrict}`, state.homeDistrict === me.homeDistrict, () => set({ homeDistrict: state.homeDistrict === me.homeDistrict ? '' : me.homeDistrict })));
     }
-    list.push(chip('Working in Patna', state.workDistrict.toLowerCase() === 'patna', () => set({ workDistrict: state.workDistrict.toLowerCase() === 'patna' ? '' : 'Patna' })));
+    // "Working in my city": the city on the viewer's own profile, if they have added one.
+    const city = me && me.workDistrict ? me.workDistrict.trim() : '';
+    if (city) list.push(chip(`Working in ${city}`, state.workDistrict.toLowerCase() === city.toLowerCase(), () => set({ workDistrict: state.workDistrict.toLowerCase() === city.toLowerCase() ? '' : city })));
     list.push(chip('Open to mentoring', state.mentor, () => set({ mentor: !state.mentor })));
     chipsEl.replaceChildren(...list);
   }

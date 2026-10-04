@@ -6,7 +6,7 @@ import { badRequest, conflict, notFound, uniqueViolation } from '../lib/errors.j
 import { normalizePhone } from '../lib/phone.js';
 import { BRANCHES, DEGREES, TITLES, matchOption } from '../lib/reference.js';
 import { parseBatchCsv, parseMemberCsv } from './csv.js';
-import { adminCreateInput, fieldErrors, type AdminCreateInput, type JoinInput, type MemberFields, type ProfileUpdateInput } from './schemas.js';
+import { adminCreateInput, fieldErrors, type AdminCreateInput, type JoinInput, type MemberFields, type ProfileUpdateInput, type ResubmitInput } from './schemas.js';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Conn = Db | Tx;
@@ -335,6 +335,7 @@ const PUBLIC_COLUMNS = {
   decidedBy: members.decidedBy, decidedAt: members.decidedAt, consentAt: members.consentAt,
   hasPhoto: sql<boolean>`${members.photo} IS NOT NULL`, proofName: members.proofName,
   hasProof: sql<boolean>`${members.proof} IS NOT NULL`, createdAt: members.createdAt, updatedAt: members.updatedAt,
+  deletionRequestedAt: members.deletionRequestedAt, deletionNote: members.deletionNote,
 };
 
 export async function getMember(db: Db, id: string) {
@@ -638,4 +639,49 @@ export async function committee(db: Db) {
     .where(and(eq(members.status, 'verified'), sql`${members.title} IS NOT NULL AND ${members.title} <> ''`))
     .orderBy(sql`${order} NULLS LAST`, members.name)
     .limit(12);
+}
+
+/** A rejected applicant corrects their details: checked against the batch list again and back in the queue. */
+export async function resubmit(db: Db, id: string, input: ResubmitInput) {
+  const m = await getMember(db, id);
+  if (m.status !== 'rejected') throw badRequest(m.status === 'pending' ? 'Your registration is already waiting for review' : 'Only a registration that was not verified can be submitted again');
+  const { proof, ...f } = input;
+  const match = await matchBatchList(db, { rollNo: f.rollNo ?? null, name: f.name, batch: f.batch, branch: f.branch, degree: f.degree });
+  await db
+    .update(members)
+    .set({
+      name: f.name, rollNo: f.rollNo ?? null, degree: f.degree, batch: f.batch, branch: f.branch,
+      position: f.position, organisation: f.organisation, workDistrict: f.workDistrict, workState: f.workState,
+      homeDistrict: f.homeDistrict, vouchedBy: f.vouchedBy ?? null,
+      batchMatch: match.level, batchMatchNotes: match.notes,
+      ...(proof ? { proof: proof.data.data, proofType: proof.data.type, proofName: proof.name } : {}),
+      status: 'pending', rejectReason: null, decidedBy: null, decidedAt: null, updatedAt: new Date(),
+    })
+    .where(eq(members.id, id));
+  await audit(db, `member:${f.name}`, 'member.resubmitted', id, { name: f.name, batchMatch: match.level, previousReason: m.rejectReason });
+  return getMember(db, id);
+}
+
+/** A member asks for their account to be deleted (or withdraws the request). */
+export async function setDeletionRequest(db: Db, id: string, request: { note?: string } | null) {
+  const m = await getMember(db, id);
+  await db
+    .update(members)
+    .set(request ? { deletionRequestedAt: m.deletionRequestedAt ?? new Date(), deletionNote: request.note ?? null } : { deletionRequestedAt: null, deletionNote: null })
+    .where(eq(members.id, id));
+  await audit(db, `member:${m.name}`, request ? 'member.deletion_requested' : 'member.deletion_withdrawn', id, request?.note ? { note: request.note } : undefined);
+  return getMember(db, id);
+}
+
+/**
+ * Deletes a member and everything that belongs to them (RSVPs, board posts, interests, reports).
+ * The activity log keeps only that an account was deleted, not whose.
+ */
+export async function deleteMember(db: Db, id: string, actorId: string | undefined, actor: string) {
+  const m = await getMember(db, id);
+  if (m.id === actorId) throw badRequest('You cannot delete your own account here. Ask another admin.');
+  if (m.role === 'admin') throw badRequest('Remove the admin role first, then delete the account.');
+  await db.delete(members).where(eq(members.id, id));
+  await audit(db, actor, 'member.deleted', null, { onRequest: !!m.deletionRequestedAt });
+  return { deleted: true };
 }

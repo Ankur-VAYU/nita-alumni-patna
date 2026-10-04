@@ -273,6 +273,36 @@ describe('directory summary', () => {
   });
 });
 
+describe('account deletion', () => {
+  it('lets a member ask, withdraw and ask again; an admin then deletes everything of theirs', async () => {
+    const boss = await member({ role: 'admin' });
+    const mod = await member({ role: 'moderator' });
+    const a = await member();
+    const e = await makeEvent();
+    await a.req('POST', `/api/v1/events/${e.id}/rsvp`, { guests: 0 });
+    await a.req('POST', '/api/v1/posts', post());
+    expect((await a.req('POST', '/api/v1/me/deletion-request', { note: 'Moving abroad' })).statusCode).toBe(200);
+    expect((await t.inject({ url: '/me', headers: { cookie: a.cookie } })).body).toContain('Deletion requested');
+    expect((await a.req('DELETE', '/api/v1/me/deletion-request')).json()).toEqual({ deletionRequestedAt: null });
+    await a.req('POST', '/api/v1/me/deletion-request', {});
+    expect((await t.inject({ url: '/api/v1/admin/overview', headers: admin })).json().deletionRequests).toBe(1);
+    expect((await mod.req('DELETE', `/api/v1/admin/members/${a.id}`)).statusCode).toBe(403);
+    expect((await boss.req('DELETE', `/api/v1/admin/members/${boss.id}`)).statusCode).toBe(400);
+    expect((await boss.req('DELETE', `/api/v1/admin/members/${a.id}`)).json()).toEqual({ deleted: true });
+    expect((await t.inject({ url: `/api/v1/admin/members/${a.id}`, headers: admin })).statusCode).toBe(404);
+    expect((await boss.req('GET', '/api/v1/posts')).json()).toHaveLength(0);
+    expect((await boss.req('GET', '/api/v1/events')).json()[0].people).toBe(0);
+    const log = (await t.inject({ url: '/api/v1/admin/audit', headers: admin })).json();
+    expect(log[0]).toMatchObject({ action: 'member.deleted', target: null, detail: { onRequest: true } });
+    expect((await t.inject({ url: '/api/v1/me', headers: { cookie: a.cookie } })).statusCode).toBe(401);
+  });
+
+  it('will not delete an admin', async () => {
+    const other = await member({ role: 'admin' });
+    expect((await t.inject({ method: 'DELETE', url: `/api/v1/admin/members/${other.id}`, headers: admin })).json().message).toMatch(/admin role first/);
+  });
+});
+
 describe('visitor pages', () => {
   it('shows the welcome page with the next event, institute updates and the titled committee only', async () => {
     await makeEvent({ title: 'Annual alumni meet' });

@@ -46,6 +46,8 @@ export const members = pgTable('members', {
   decidedAt: timestamp('decided_at', { withTimezone: true }),
   consentAt: timestamp('consent_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  deletionRequestedAt: timestamp('deletion_requested_at', { withTimezone: true }),
+  deletionNote: varchar('deletion_note', { length: 300 }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

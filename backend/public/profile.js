@@ -84,3 +84,26 @@
     root.replaceChildren(form);
   }).catch((e) => root.replaceChildren(h('p', { class: 'note bad' }, e.message)));
 })();
+
+// Account deletion: ask (with an optional reason), or withdraw the request.
+(function () {
+  'use strict';
+  const { api, toast } = window.NITA;
+  const $ = (id) => document.getElementById(id);
+  if ($('askDeletion')) {
+    $('askDeletion').addEventListener('click', () => { $('deletionForm').hidden = false; $('askDeletion').hidden = true; $('deletionNote').focus(); });
+    $('closeDeletion').addEventListener('click', () => { $('deletionForm').hidden = true; $('askDeletion').hidden = false; });
+    $('confirmDeletion').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try { await api('/api/v1/me/deletion-request', { json: { note: $('deletionNote').value } }); location.reload(); }
+      catch (err) { toast(err.message); e.target.disabled = false; }
+    });
+  }
+  if ($('cancelDeletion')) {
+    $('cancelDeletion').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try { await api('/api/v1/me/deletion-request', { method: 'DELETE' }); location.reload(); }
+      catch (err) { toast(err.message); e.target.disabled = false; }
+    });
+  }
+})();

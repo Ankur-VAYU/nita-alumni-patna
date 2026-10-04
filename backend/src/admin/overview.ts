@@ -10,6 +10,7 @@ export async function adminOverview(db: Db) {
       verified: sql<number>`count(*) FILTER (WHERE ${members.status} = 'verified')::int`,
       pending: sql<number>`count(*) FILTER (WHERE ${members.status} = 'pending')::int`,
       admins: sql<number>`count(*) FILTER (WHERE ${members.status} = 'verified' AND ${members.role} = 'admin')::int`,
+      deletionRequests: sql<number>`count(*) FILTER (WHERE ${members.deletionRequestedAt} IS NOT NULL)::int`,
     })
     .from(members);
   const [{ openPosts }] = await db
@@ -51,7 +52,7 @@ export async function adminOverview(db: Db) {
     .limit(50);
 
   return {
-    verified: m.verified, pending: m.pending, admins: m.admins, openPosts, closingSoon, reported, nextEvent,
+    verified: m.verified, pending: m.pending, admins: m.admins, deletionRequests: m.deletionRequests, openPosts, closingSoon, reported, nextEvent,
     staleProfiles: { count: stale.length, names: stale.slice(0, 5).map((s) => s.name) },
   };
 }

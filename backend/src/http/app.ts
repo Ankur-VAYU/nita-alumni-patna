@@ -9,13 +9,13 @@ import type { Db } from '../db/index.js';
 import { authorizationUrl, exchangeCode, randomToken, type GoogleConfig } from '../auth/google.js';
 import { AppError, badRequest, forbidden, unauthorized } from '../lib/errors.js';
 import { BIHAR_DISTRICTS, BRANCHES, DEGREES, FIRST_BATCH_YEAR, TITLES, WORK_STATES } from '../lib/reference.js';
-import { adminCreateInput, directoryQuery, fieldErrors, joinInput, profileUpdateInput, rejectInput, roleInput } from '../members/schemas.js';
+import { adminCreateInput, deletionRequestInput, directoryQuery, fieldErrors, joinInput, profileUpdateInput, rejectInput, resubmitInput, roleInput } from '../members/schemas.js';
 import {
   approveMember, createByAdmin, exportMembersCsv, getFile, getMember, importBatchList, importMembers,
   chapterStats, directorySummary, findMemberByEmail, getDirectoryPhoto, getSessionMember, listAudit, listDirectory, listMembers, recordSignIn, registerFromForm,
-  rejectMember, setRole, setStatus, updateOwnProfile, profileCompleteness, committee,
+  rejectMember, setRole, setStatus, updateOwnProfile, profileCompleteness, committee, resubmit, setDeletionRequest, deleteMember,
 } from '../members/service.js';
-import { adminPage, alumniPage, boardPage, eventsPage, homePage, joinPage, loginPage, mePage, newsPage, privacyPage, visitorHomePage, type NavUser } from './pages.js';
+import { adminPage, alumniPage, boardPage, eventsPage, homePage, joinPage, loginPage, mePage, newsPage, privacyPage, statusPage, visitorHomePage, type NavUser } from './pages.js';
 import { newsInput, newsQuery } from '../news/schemas.js';
 import { createNews, deleteNews, listNews, newsHighlights, updateNews } from '../news/service.js';
 import { adminOverview, batchListInfo } from '../admin/overview.js';
@@ -228,8 +228,8 @@ export function createHttpApp(opts: HttpOptions) {
     });
   }
 
-  /** The signed-in person, re-checked against the database on every request. */
-  async function currentActor(c: Context<Env>): Promise<Actor | null> {
+  /** Who the session cookie belongs to ('key' or a member id), if it is valid and not expired. */
+  async function sessionSubject(c: Context<Env>): Promise<string | null> {
     if (!sessionSecret) return null;
     const raw = await getSignedCookie(c, sessionSecret, SESSION_COOKIE);
     if (!raw) return null;
@@ -239,9 +239,23 @@ export function createHttpApp(opts: HttpOptions) {
     } catch {
       return null;
     }
-    if (!payload.s || !payload.e || payload.e < Date.now()) return null;
-    if (payload.s === 'key') return { kind: 'key-session', name: 'Admin key', role: 'admin', label: 'admin-key' };
-    const m = await getSessionMember(c.var.db, payload.s);
+    return payload.s && payload.e && payload.e >= Date.now() ? payload.s : null;
+  }
+
+  /** An applicant whose registration is waiting or was not verified: they may only see their status page. */
+  async function currentApplicant(c: Context<Env>) {
+    const sub = await sessionSubject(c);
+    if (!sub || sub === 'key') return null;
+    const m = await getSessionMember(c.var.db, sub);
+    return m && (m.status === 'pending' || m.status === 'rejected') ? m : null;
+  }
+
+  /** The signed-in person, re-checked against the database on every request. */
+  async function currentActor(c: Context<Env>): Promise<Actor | null> {
+    const sub = await sessionSubject(c);
+    if (!sub) return null;
+    if (sub === 'key') return { kind: 'key-session', name: 'Admin key', role: 'admin', label: 'admin-key' };
+    const m = await getSessionMember(c.var.db, sub);
     if (!m || m.status !== 'verified') return null;
     return { kind: 'member', id: m.id, name: m.name, role: m.role, label: `member:${m.name}` };
   }
@@ -301,6 +315,11 @@ export function createHttpApp(opts: HttpOptions) {
     }
     const m = await findMemberByEmail(c.var.db, identity.email);
     if (!m) return toLogin(c, 'not_member', { email: identity.email });
+    if (m.status === 'pending' || m.status === 'rejected') {
+      // Applicants can sign in to see where their registration stands (and correct it if it was not verified).
+      await startSession(c, m.id, 24 * 3600);
+      return c.redirect('/status');
+    }
     if (m.status !== 'verified') return toLogin(c, m.status);
     await startSession(c, m.id, MEMBER_SESSION_DAYS * 24 * 3600);
     await recordSignIn(c.var.db, m, 'google');
@@ -335,6 +354,25 @@ export function createHttpApp(opts: HttpOptions) {
   });
 
   // Event details for visitors: no names, no contact details.
+  // The status page for applicants: waiting for review, or not verified with the reason and a form to correct it.
+  app.get('/status', withDb, async (c) => {
+    if (await currentActor(c)) return c.redirect('/home');
+    const a = await currentApplicant(c);
+    if (!a) return toLogin(c, 'need');
+    pageHeaders(c);
+    const years: number[] = [];
+    for (let y = new Date().getFullYear(); y >= FIRST_BATCH_YEAR; y--) years.push(y);
+    return c.html(statusPage(await getMember(c.var.db, a.id), { degrees: DEGREES, branches: BRANCHES, years, districts: BIHAR_DISTRICTS, states: WORK_STATES }));
+  });
+
+  app.post('/api/v1/me/resubmit', withDb, async (c) => {
+    const a = await currentApplicant(c);
+    if (!a) throw unauthorized('Please sign in again');
+    if (c.req.header(CSRF_HEADER) !== CSRF_VALUE) throw forbidden('Missing request header');
+    const m = await resubmit(c.var.db, a.id, parse(resubmitInput, await readJson(c, JOIN_BODY_LIMIT)));
+    return c.json({ status: m.status, batchMatch: m.batchMatch });
+  });
+
   app.get('/api/v1/public/events', withDb, async (c) => c.json(await publicEvents(c.var.db)));
 
   /** What the sidebar shows: the person, and for staff the number of things waiting for them. */
@@ -425,6 +463,16 @@ export function createHttpApp(opts: HttpOptions) {
 
   app.get('/api/v1/news', withDb, requireMember, async (c) => c.json(await listNews(c.var.db, parse(newsQuery, c.req.query()))));
 
+  // Asking for the account to be deleted; an admin then deletes it (Admin → Members).
+  app.post('/api/v1/me/deletion-request', withDb, requireMember, async (c) => {
+    const m = await setDeletionRequest(c.var.db, me(c), parse(deletionRequestInput, await readJson(c)));
+    return c.json({ deletionRequestedAt: m.deletionRequestedAt });
+  });
+  app.delete('/api/v1/me/deletion-request', withDb, requireMember, async (c) => {
+    await setDeletionRequest(c.var.db, me(c), null);
+    return c.json({ deletionRequestedAt: null });
+  });
+
   app.put('/api/v1/me/profile', withDb, requireMember, async (c) => {
     const input = parse(profileUpdateInput, await readJson(c, 600 * 1024));
     return c.json(await updateOwnProfile(c.var.db, c.var.actor.id!, input));
@@ -510,6 +558,7 @@ export function createHttpApp(opts: HttpOptions) {
       return c.body(new Uint8Array(f.data), 200, { 'content-type': f.type, 'cache-control': 'private, no-store', 'content-disposition': 'inline' });
     });
   }
+  admin.delete('/members/:id', adminOnly, async (c) => c.json(await deleteMember(c.var.db, id(c), c.var.actor.id, actorOf(c))));
   admin.post('/members/:id/approve', async (c) => c.json(await approveMember(c.var.db, id(c), actorOf(c))));
   admin.post('/members/:id/reject', async (c) => c.json(await rejectMember(c.var.db, id(c), parse(rejectInput, await readJson(c)).reason, actorOf(c))));
   admin.post('/members/:id/suspend', adminOnly, async (c) => c.json(await setStatus(c.var.db, id(c), 'suspended', actorOf(c))));
