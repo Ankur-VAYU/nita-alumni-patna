@@ -64,8 +64,22 @@
   const hashTab = () => { const k = location.hash.replace('#', ''); return ALIASES[k] || k; };
   let tab = TABS.some(([k]) => k === hashTab()) ? hashTab() : 'overview';
   const tabBar = h('div', { class: 'tabs', role: 'tablist' });
+  // On phones the eight tabs do not fit, so a dropdown lists every section instead.
+  const tabSelect = h('select', { class: 'tab-select', 'aria-label': 'Admin section', onchange: () => show(tabSelect.value) });
   const panel = h('div', { class: 'stack', style: 'gap:24px' });
-  root.replaceChildren(tabBar, panel);
+  root.replaceChildren(h('div', { class: 'field tab-pick' }, h('label', {}, 'Section'), tabSelect), tabBar, panel);
+  // On phones tables are shown as cards; each cell needs its column name as a label.
+  new MutationObserver(() => {
+    for (const table of panel.querySelectorAll('table')) {
+      const heads = [...table.querySelectorAll('thead th')].map((th) => th.textContent);
+      for (const tr of table.querySelectorAll('tbody tr')) [...tr.children].forEach((td, i) => {
+        if (td.dataset.label || !heads[i]) return;
+        td.dataset.label = heads[i];
+        // Keep a cell's lines together in the value column of the card.
+        if (td.childNodes.length > 1) td.replaceChildren(h('div', {}, ...td.childNodes));
+      });
+    }
+  }).observe(panel, { childList: true, subtree: true });
   root.className = 'stack';
   root.style.gap = '20px';
 
@@ -73,6 +87,10 @@
     tabBar.replaceChildren(...TABS.map(([k, label]) => {
       const n = k === 'verify' ? counts.pending : k === 'reports' ? counts.reports : 0;
       return h('button', { type: 'button', role: 'tab', 'aria-selected': String(tab === k), onclick: () => show(k) }, label, n ? h('span', { class: 'count' }, n) : null);
+    }));
+    tabSelect.replaceChildren(...TABS.map(([k, label]) => {
+      const n = k === 'verify' ? counts.pending : k === 'reports' ? counts.reports : 0;
+      return h('option', { value: k, selected: tab === k }, label + (n ? ` (${n})` : ''));
     }));
   }
   async function refreshCounts() {
@@ -374,7 +392,7 @@
     } else if (IS_ADMIN && m.status === 'suspended') {
       actions.append(actionBtn('Reinstate', 'ghost', async () => { await api(`/members/${m.id}/reinstate`, { json: {} }); toast('Reinstated'); reload(); }));
     }
-    return h('div', { class: 'item', style: 'grid-template-columns:auto minmax(0,1fr) auto;align-items:center' }, avatar(m, 'sm'),
+    return h('div', { class: 'item member-row' }, avatar(m, 'sm'),
       h('div', {},
         h('div', { class: 'row', style: 'gap:6px' }, h('b', {}, m.name), statusTag(m.status),
           m.title ? h('span', { class: 'tag info' }, m.title) : m.role !== 'member' ? h('span', { class: 'tag info' }, m.role) : null),
