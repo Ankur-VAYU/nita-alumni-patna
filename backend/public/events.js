@@ -79,7 +79,7 @@
           IS_ADMIN ? h('div', { class: 'row' }, h('a', { class: 'btn', href: '/admin#events' }, 'Add event')) : null),
         h('section', { class: 'section' }, h('h2', {}, 'Upcoming'),
           ...(up.length ? up.map(card) : [h('div', { class: 'card empty' }, 'No upcoming events yet. The committee will announce the next meet here.')])),
-        past.length ? h('section', { class: 'section' }, h('h2', {}, 'Past'), ...past.map(card)) : null);
+        past.length ? h('section', { class: 'section' }, h('h2', {}, 'Past'), ...past.map(card)) : '');
     } catch (e) { root.replaceChildren(h('p', { class: 'note bad' }, e.message)); }
   }
   load();

@@ -371,7 +371,7 @@
           h('button', { class: 'btn', type: 'button', onclick: () => openTool(addMemberForm) }, 'Add member'),
           h('button', { class: 'btn ghost', type: 'button', onclick: () => openTool(importBox) }, 'Import & export')) : null),
       tools, out,
-      IS_ADMIN ? h('p', { class: 'hint' }, 'Keep at least two admins so verification continues when one is away.') : null);
+      IS_ADMIN ? h('p', { class: 'hint' }, 'Keep at least two admins so verification continues when one is away.') : '');
     await load();
   }
 
@@ -459,9 +459,9 @@
         const bad = s.rows.filter((r) => r.result === 'invalid');
         result.replaceChildren(
           h('p', { class: 'note ' + (bad.length ? 'warn' : 'ok') }, `${dry ? 'Check only, nothing saved' : 'Imported'}: ${s.total} rows · ${dry ? s.wouldCreate + ' would be created' : s.created + ' created'} · ${s.alreadyRegistered} already registered · ${s.invalid} need fixing`),
-          s.ignoredColumns.length ? h('p', { class: 'hint' }, 'Ignored columns: ' + s.ignoredColumns.join(', ')) : null,
+          s.ignoredColumns.length ? h('p', { class: 'hint' }, 'Ignored columns: ' + s.ignoredColumns.join(', ')) : '',
           bad.length ? h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Row'), h('th', {}, 'Name'), h('th', {}, 'What to fix'))),
-            h('tbody', {}, bad.map((r) => h('tr', {}, h('td', {}, r.row), h('td', {}, r.name), h('td', {}, Object.entries(r.errors || {}).map(([k, v]) => `${k}: ${v}`).join('; '))))))) : null);
+            h('tbody', {}, bad.map((r) => h('tr', {}, h('td', {}, r.row), h('td', {}, r.name), h('td', {}, Object.entries(r.errors || {}).map(([k, v]) => `${k}: ${v}`).join('; '))))))) : '');
       } catch (e) { result.replaceChildren(h('p', { class: 'note bad' }, e.message)); }
     };
     return h('div', { class: 'card section' },
