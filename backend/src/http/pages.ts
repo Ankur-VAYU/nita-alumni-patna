@@ -392,7 +392,7 @@ export function visitorHomePage(hl: PublicHighlights) {
   <p>Find batchmates from your district, attend chapter meets in Patna, and help each other with jobs, referrals and mentoring across India. Every member is verified by the chapter committee.</p>
   <div class="row"><a class="btn" href="/join">Join the chapter</a><a class="btn ghost" href="/login">I already have an account</a></div></div>
   <img src="/emblem.svg" alt="" width="140" height="140"></div>
-<section class="section"><h2>How joining works</h2><div class="steps">
+<section class="section"><h2>Join in three steps</h2><div class="steps">
   <div class="card step"><h3>Register</h3><p class="muted">Fill in the join form with your batch, branch, roll number, home district in Bihar and where you work now.</p></div>
   <div class="card step"><h3>Get verified</h3><p class="muted">The committee checks your roll number against the institute batch list, usually within 2 working days. A degree or ID upload helps if it doesn't match.</p></div>
   <div class="card step"><h3>Sign in with Google</h3><p class="muted">Use the Google account you registered with to find alumni, join events and post on the board.</p></div>
